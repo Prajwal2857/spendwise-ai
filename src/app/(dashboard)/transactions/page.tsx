@@ -146,7 +146,7 @@ export default function TransactionsPage() {
     }
   };
 
-  const handlePDFImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -157,7 +157,7 @@ export default function TransactionsPage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/pdf-import", {
+      const res = await fetch("/api/file-import", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -175,7 +175,7 @@ export default function TransactionsPage() {
         toast.error(data.error || "Import failed");
       }
     } catch {
-      toast.error("Failed to import PDF");
+      toast.error("Failed to import file");
     } finally {
       setImporting(false);
       e.target.value = "";
@@ -224,13 +224,13 @@ export default function TransactionsPage() {
           <label className="cursor-pointer">
             <input
               type="file"
-              accept=".pdf"
-              onChange={handlePDFImport}
+              accept=".pdf,.jpg,.jpeg,.png"
+              onChange={handleFileImport}
               className="hidden"
             />
             <span className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors">
               <Upload className="w-4 h-4" />
-              {importing ? "Importing..." : "Import PDF"}
+              {importing ? "Importing..." : "Import File"}
             </span>
           </label>
           <Button
