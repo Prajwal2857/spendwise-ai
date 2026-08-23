@@ -52,8 +52,8 @@ export async function GET(req: NextRequest) {
 
     // Budget alerts
     const budgets = await prisma.budget.findMany({ where: { userId } });
-    const budgetAlerts = budgets.map((budget) => {
-      const categoryData = categorySpending.find((c) => c.category === budget.category);
+    const budgetAlerts = budgets.map((budget: { id: string; category: string; amount: number }) => {
+      const categoryData = categorySpending.find((c: { category: string; _sum: { amount: number | null } }) => c.category === budget.category);
       const spent = categoryData?._sum.amount || 0;
       const percentage = Math.round((spent / budget.amount) * 100);
       let status: "safe" | "warning" | "over" = "safe";
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     const activeSubscriptions = await prisma.subscription.findMany({
       where: { userId, active: true },
     });
-    const monthlySubCost = activeSubscriptions.reduce((sum, s) => {
+    const monthlySubCost = activeSubscriptions.reduce((sum: number, s: { billingCycle: string; amount: number }) => {
       if (s.billingCycle === "monthly") return sum + s.amount;
       if (s.billingCycle === "yearly") return sum + s.amount / 12;
       if (s.billingCycle === "weekly") return sum + s.amount * 4;
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Budget alerts
-    budgetAlerts.forEach((b) => {
+    budgetAlerts.forEach((b: { category: string; percentage: number; status: string }) => {
       if (b.status === "over") {
         insights.push({
           icon: "🎯",
@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
         lastSpent,
         lastIncome: lastIncomeTotal,
         savingsRate: totalIncome > 0 ? Math.round(((totalIncome - totalSpent) / totalIncome) * 100) : 0,
-        categorySpending: categorySpending.map((c) => ({
+        categorySpending: categorySpending.map((c: { category: string; _sum: { amount: number | null } }) => ({
           category: c.category,
           amount: c._sum.amount || 0,
         })),
