@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                      String   @id @default(cuid())
+  name                    String
+  email                   String   @unique
+  passwordHash            String   @map("password_hash")
+  role                    String   @default("user")
+  currency                String   @default("INR")
+  onboardingCompleted     Boolean  @default(false) @map("onboarding_completed")
+  monthlyIncome           Float    @default(0) @map("monthly_income")
+  selectedCategories      String[] @map("selected_categories")
+  notificationPreferences Json?    @map("notification_preferences")
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  accounts          Account[]
+  transactions      Transaction[]
+  budgets           Budget[]
+  savingsGoals      SavingsGoal[]
+  subscriptions     Subscription[]
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+model Account {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String
+  type        String
+  balance     Float    @default(0)
+  institution String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("accounts")
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  accountId     String?  @map("account_id")
+  merchant      String
+  amount        Float
+  type          String
+  category      String
+  paymentMethod String   @map("payment_method")
+  date          DateTime
+  notes         String?
+  recurring     Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+  @@index([userId, category])
+  @@map("transactions")
+}
+
+model Budget {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  category  String
+  amount    Float
+  period    String   @default("monthly")
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, period])
+  @@map("budgets")
+}
+
+model SavingsGoal {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  name          String
+  targetAmount  Float     @map("target_amount")
+  currentAmount Float     @default(0) @map("current_amount")
+  targetDate    DateTime? @map("target_date")
+  icon          String?
+  color         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("savings_goals")
+}
+
+model Subscription {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  name         String
+  amount       Float
+  billingCycle String   @default("monthly") @map("billing_cycle")
+  renewalDate  DateTime @map("renewal_date")
+  category     String?
+  active       Boolean  @default(true)
+  icon         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String
+  message   String
+  type      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}

@@ -9,8 +9,8 @@ export interface JWTPayload {
   role?: string;
 }
 
-export function signToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+export function signToken(userId: string, email: string, role: string): string {
+  return jwt.sign({ userId, email, role }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 export function verifyToken(token: string): JWTPayload {
@@ -27,11 +27,12 @@ export function getTokenFromRequest(req: NextRequest): string | null {
   return token || null;
 }
 
-export function getUserFromRequest(req: NextRequest): JWTPayload | null {
+export function getUserFromRequest(req: NextRequest): string | null {
   const token = getTokenFromRequest(req);
   if (!token) return null;
   try {
-    return verifyToken(token);
+    const payload = verifyToken(token);
+    return payload.userId;
   } catch {
     return null;
   }

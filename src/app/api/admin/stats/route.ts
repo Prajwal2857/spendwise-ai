@@ -1,62 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import User from "@/models/User";
-import Transaction from "@/models/Transaction";
-import Budget from "@/models/Budget";
-import Subscription from "@/models/Subscription";
+import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = getUserFromRequest(req);
+    const userId = getUserFromRequest(req);
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await connectDB();
-
-    const totalUsers = await User.countDocuments();
-    const totalTransactions = await Transaction.countDocuments();
-    const totalBudgets = await Budget.countDocuments();
-    const totalSubscriptions = await Subscription.countDocuments();
-
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const activeUsers = await Transaction.distinct("userId", { createdAt: { $gte: thirtyDaysAgo } });
-
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const newRegistrations = await User.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
-
-    // Top categories
-    const categoryAgg = await Transaction.aggregate([
-      { $match: { type: "expense" } },
-      { $group: { _id: "$category", count: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
-      { $sort: { totalAmount: -1 } },
-      { $limit: 10 },
+    const [totalUsers, totalTransactions, activeSubscriptions] = await Promise.all([
+      prisma.user.count(),
+      prisma.transaction.count(),
+      prisma.subscription.count({ where: { active: true } }),
     ]);
 
-    // Recent registrations
-    const recentUsers = await User.find()
-      .select("name email createdAt role")
-      .sort("-createdAt")
-      .limit(10)
-      .lean();
+    const topCategories = await prisma.transaction.groupBy({
+      by: ["category"],
+      where: { type: "expense" },
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 10,
+    });
+
+    const recentUsers = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { id: true, name: true, email: true, createdAt: true, role: true },
+    });
 
     return NextResponse.json({
-      stats: {
-        totalUsers,
-        activeUsers: activeUsers.length,
-        newRegistrations,
-        totalTransactions,
-        totalBudgets,
-        totalSubscriptions,
-        topCategories: categoryAgg,
-        recentUsers,
-      },
+      stats: { totalUsers, totalTransactions, activeSubscriptions },
+      topCategories,
+      recentUsers,
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("Admin stats error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

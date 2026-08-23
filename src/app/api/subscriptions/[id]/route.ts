@@ -1,44 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Subscription from "@/models/Subscription";
+import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = getUserFromRequest(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId = getUserFromRequest(req);
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    await connectDB();
     const { id } = await params;
     const body = await req.json();
 
-    const subscription = await Subscription.findOneAndUpdate(
-      { _id: id, userId: user.userId },
-      body,
-      { new: true }
-    );
+    const existing = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (!subscription) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+    const subscription = await prisma.subscription.update({
+      where: { id },
+      data: {
+        name: body.name ?? existing.name,
+        amount: body.amount ? parseFloat(body.amount) : existing.amount,
+        billingCycle: body.billingCycle ?? existing.billingCycle,
+        renewalDate: body.renewalDate ? new Date(body.renewalDate) : existing.renewalDate,
+        category: body.category !== undefined ? body.category : existing.category,
+        active: body.active !== undefined ? body.active : existing.active,
+        icon: body.icon !== undefined ? body.icon : existing.icon,
+      },
+    });
+
     return NextResponse.json({ subscription });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("Update subscription error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = getUserFromRequest(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId = getUserFromRequest(req);
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    await connectDB();
     const { id } = await params;
+    const existing = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const subscription = await Subscription.findOneAndDelete({ _id: id, userId: user.userId });
-    if (!subscription) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
-    return NextResponse.json({ message: "Subscription deleted" });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    await prisma.subscription.delete({ where: { id } });
+    return NextResponse.json({ message: "Deleted" });
+  } catch (error) {
+    console.error("Delete subscription error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -1,180 +1,136 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Transaction from "@/models/Transaction";
+import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
+import Papa from "papaparse";
 
-// Simple CSV parser
-function parseCSV(text: string): string[][] {
-  const lines = text.split("\n").filter((l) => l.trim());
-  return lines.map((line) => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (const char of line) {
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === "," && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    result.push(current.trim());
-    return result;
-  });
-}
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  Food: ["swiggy", "zomato", "restaurant", "cafe", "food", "pizza", "burger", "chai", "coffee"],
+  Shopping: ["amazon", "flipkart", "myntra", "ajio", "nykaa", "shopping", "store", "mall"],
+  Transportation: ["uber", "ola", "metro", "bus", "fuel", "petrol", "parking", "taxi"],
+  Entertainment: ["netflix", "spotify", "bookmyshow", "youtube", "hotstar", "prime video"],
+  "Bills & Utilities": ["electricity", "water", "gas", "internet", "broadland", "recharge"],
+  Healthcare: ["practo", "pharmacy", "medical", "hospital", "doctor", "clinic"],
+  Education: ["course", "udemy", "coursera", "book", "tuition", "college"],
+  Housing: ["rent", "maintenance", "society"],
+  Travel: ["flight", "train", "hotel", "booking", "airbnb"],
+};
 
-function detectColumnTypes(headers: string[]): Record<string, string> {
-  const mapping: Record<string, string> = {};
-  headers.forEach((h) => {
-    const lower = h.toLowerCase();
-    if (lower.includes("date") || lower.includes("time")) mapping[h] = "date";
-    else if (lower.includes("amount") || lower.includes("sum") || lower.includes("debit") || lower.includes("credit") || lower.includes("balance")) mapping[h] = "amount";
-    else if (lower.includes("desc") || lower.includes("narration") || lower.includes("merchant") || lower.includes("payee")) mapping[h] = "merchant";
-    else if (lower.includes("type") || lower.includes("category")) mapping[h] = "category";
-    else if (lower.includes("note") || lower.includes("remark")) mapping[h] = "notes";
-  });
-  return mapping;
-}
-
-function detectIncomeOrExpense(description: string, amount: number): "income" | "expense" {
-  const incomeKeywords = ["credit", "salary", "income", "refund", "transfer in", "received", "cashback", "interest"];
-  const lower = description.toLowerCase();
-  if (incomeKeywords.some((k) => lower.includes(k))) return "income";
-  if (amount > 0) return "expense";
-  return "expense";
-}
-
-function autoCategory(merchant: string): string {
+function categorizeMerchant(merchant: string): string {
   const lower = merchant.toLowerCase();
-  if (lower.includes("swiggy") || lower.includes("zomato") || lower.includes("food") || lower.includes("restaurant") || lower.includes("cafe")) return "Food";
-  if (lower.includes("amazon") || lower.includes("flipkart") || lower.includes("myntra") || lower.includes("shopping")) return "Shopping";
-  if (lower.includes("uber") || lower.includes("ola") || lower.includes("metro") || lower.includes("petrol") || lower.includes("fuel")) return "Transportation";
-  if (lower.includes("rent") || lower.includes("maintenance")) return "Housing";
-  if (lower.includes("electricity") || lower.includes("water") || lower.includes("gas") || lower.includes("bill")) return "Bills & Utilities";
-  if (lower.includes("netflix") || lower.includes("spotify") || lower.includes("hotstar") || lower.includes("prime")) return "Subscriptions";
-  if (lower.includes("movie") || lower.includes("game") || lower.includes("entertainment")) return "Entertainment";
-  if (lower.includes("hospital") || lower.includes("medical") || lower.includes("pharmacy")) return "Healthcare";
-  if (lower.includes("school") || lower.includes("college") || lower.includes("course")) return "Education";
-  if (lower.includes("train") || lower.includes("flight") || lower.includes("hotel")) return "Travel";
-  if (lower.includes("recharge") || lower.includes("jio") || lower.includes("airtel")) return "Mobile/Internet";
-  if (lower.includes("salary") || lower.includes("income") || lower.includes("credit")) return "Income";
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((k) => lower.includes(k))) return category;
+  }
   return "Other";
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = getUserFromRequest(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    await connectDB();
+    const userId = getUserFromRequest(req);
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const formData = await req.formData();
     const file = formData.get("file") as File;
-
-    if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-    }
+    if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
 
     const text = await file.text();
-    const rows = parseCSV(text);
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
 
-    if (rows.length < 2) {
-      return NextResponse.json({ error: "CSV file is empty or has no data rows" }, { status: 400 });
+    if (parsed.errors.length > 0) {
+      return NextResponse.json({ error: "CSV parsing failed", details: parsed.errors.slice(0, 5) }, { status: 400 });
     }
 
-    const headers = rows[0];
-    const columnMap = detectColumnTypes(headers);
+    const rows = parsed.data as Record<string, string>[];
+    const headers = Object.keys(rows[0] || {});
+    const headerLower = headers.map((h) => h.toLowerCase());
 
-    // Find required columns
-    const dateCol = headers.findIndex((h) => columnMap[h] === "date");
-    const amountCol = headers.findIndex((h) => columnMap[h] === "amount");
-    const merchantCol = headers.findIndex((h) => columnMap[h] === "merchant");
-    const notesCol = headers.findIndex((h) => columnMap[h] === "notes");
+    // Detect column mapping
+    const findCol = (terms: string[]) => headers.find((h) => terms.some((t) => h.toLowerCase().includes(t)));
+    const dateCol = findCol(["date", "time", "transaction date"]);
+    const amountCol = findCol(["amount", "debit", "credit", "value"]);
+    const descCol = findCol(["description", "narration", "merchant", "payee", "details"]);
+    const typeCol = findCol(["type", "debit/credit", "txn type"]);
+    const debitCol = findCol(["debit", "dr"]);
+    const creditCol = findCol(["credit", "cr"]);
 
-    if (amountCol === -1) {
-      return NextResponse.json({ error: "Could not detect amount column in CSV" }, { status: 400 });
+    if (!dateCol || !amountCol) {
+      return NextResponse.json({ error: "Could not detect date and amount columns", headers }, { status: 400 });
     }
 
-    const dataRows = rows.slice(1);
-    const transactions: Array<{
+    let imported = 0;
+    let duplicates = 0;
+    let needsReview = 0;
+    const newTransactions: {
       userId: string;
       merchant: string;
       amount: number;
-      type: "income" | "expense";
+      type: string;
       category: string;
       paymentMethod: string;
       date: Date;
-      notes?: string;
-      recurring: boolean;
-    }> = [];
+      notes: string | null;
+    }[] = [];
 
-    let duplicates = 0;
-    let needsReview = 0;
+    for (const row of rows) {
+      const dateStr = row[dateCol];
+      const merchant = descCol ? row[descCol] || "Unknown" : "Unknown";
+      let amount = 0;
+      let txnType = "expense";
 
-    for (const row of dataRows) {
-      if (row.length <= amountCol) { needsReview++; continue; }
-
-      const amountStr = row[amountCol].replace(/[₹$,]/g, "").trim();
-      const amount = Math.abs(parseFloat(amountStr));
+      if (debitCol && creditCol) {
+        const debit = parseFloat((row[debitCol] || "0").replace(/[₹,]/g, ""));
+        const credit = parseFloat((row[creditCol] || "0").replace(/[₹,]/g, ""));
+        if (credit > 0) {
+          amount = credit;
+          txnType = "income";
+        } else {
+          amount = debit;
+          txnType = "expense";
+        }
+      } else {
+        amount = Math.abs(parseFloat((row[amountCol] || "0").replace(/[₹,]/g, "")));
+        if (typeCol) {
+          const typeVal = (row[typeCol] || "").toLowerCase();
+          if (typeVal.includes("credit") || typeVal.includes("cr") || typeVal.includes("income")) {
+            txnType = "income";
+          }
+        } else if (headerLower.some((h) => h.includes("credit")) && headerLower.some((h) => h.includes("debit"))) {
+          // fallback
+        }
+      }
 
       if (isNaN(amount) || amount === 0) { needsReview++; continue; }
 
-      const merchant = merchantCol >= 0 ? row[merchantCol]?.trim() || "Unknown" : "Unknown";
-      const type = detectIncomeOrExpense(merchant, amount);
-      const category = autoCategory(merchant);
-      const dateStr = dateCol >= 0 ? row[dateCol]?.trim() : new Date().toISOString();
-      const date = dateStr ? new Date(dateStr) : new Date();
-      const notes = notesCol >= 0 ? row[notesCol]?.trim() : undefined;
-
+      const date = new Date(dateStr);
       if (isNaN(date.getTime())) { needsReview++; continue; }
 
-      transactions.push({
-        userId: user.userId,
-        merchant,
+      // Check duplicates
+      const existing = await prisma.transaction.findFirst({
+        where: { userId, merchant, date, amount },
+      });
+      if (existing) { duplicates++; continue; }
+
+      newTransactions.push({
+        userId,
+        merchant: merchant.substring(0, 200),
         amount,
-        type,
-        category,
+        type: txnType,
+        category: categorizeMerchant(merchant),
         paymentMethod: "Bank Transfer",
         date,
-        notes,
-        recurring: false,
+        notes: "Imported from CSV",
       });
     }
 
-    // Check for duplicates
-    const existingDates = new Set<string>();
-    for (const t of transactions) {
-      const key = `${t.merchant}-${t.amount}-${t.date.toISOString().split("T")[0]}`;
-      if (existingDates.has(key)) {
-        duplicates++;
-      } else {
-        existingDates.add(key);
-      }
-    }
-
-    // Import non-duplicate transactions
-    const toImport = transactions.filter((_, i) => {
-      const key = `${transactions[i].merchant}-${transactions[i].amount}-${transactions[i].date.toISOString().split("T")[0]}`;
-      const keys = [...existingDates];
-      return keys.indexOf(key) === i || !existingDates.has(key);
-    });
-
-    if (toImport.length > 0) {
-      await Transaction.insertMany(toImport);
+    if (newTransactions.length > 0) {
+      await prisma.transaction.createMany({ data: newTransactions });
+      imported = newTransactions.length;
     }
 
     return NextResponse.json({
-      result: {
-        totalFound: dataRows.length,
-        imported: toImport.length,
-        duplicates,
-        needsReview,
-      },
+      summary: { total: rows.length, imported, duplicates, needsReview },
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("CSV import error:", error);
+    return NextResponse.json({ error: "Import failed" }, { status: 500 });
   }
 }

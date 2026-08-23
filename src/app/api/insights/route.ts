@@ -1,204 +1,180 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectDB } from "@/lib/db";
-import Transaction from "@/models/Transaction";
-import Budget from "@/models/Budget";
-import Subscription from "@/models/Subscription";
+import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = getUserFromRequest(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    await connectDB();
+    const userId = getUserFromRequest(req);
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    // Current month transactions
-    const currentMonthExpenses = await Transaction.find({
-      userId: user.userId,
-      type: "expense",
-      date: { $gte: startOfMonth, $lte: now },
-    }).lean();
+    // Current month totals
+    const [currentExpenses, currentIncome] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { userId, type: "expense", date: { gte: startOfMonth, lte: endOfMonth } },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { userId, type: "income", date: { gte: startOfMonth, lte: endOfMonth } },
+        _sum: { amount: true },
+      }),
+    ]);
 
-    // Last month transactions
-    const lastMonthExpenses = await Transaction.find({
-      userId: user.userId,
-      type: "expense",
-      date: { $gte: startOfLastMonth, $lte: endOfLastMonth },
-    }).lean();
+    // Last month totals
+    const [lastExpensesResult, lastIncomeResult] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { userId, type: "expense", date: { gte: startOfLastMonth, lte: endOfLastMonth } },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { userId, type: "income", date: { gte: startOfLastMonth, lte: endOfLastMonth } },
+        _sum: { amount: true },
+      }),
+    ]);
 
-    // Current month income
-    const currentMonthIncome = await Transaction.find({
-      userId: user.userId,
-      type: "income",
-      date: { $gte: startOfMonth, $lte: now },
-    }).lean();
+    const totalSpent = currentExpenses._sum.amount || 0;
+    const totalIncome = currentIncome._sum.amount || 0;
+    const lastSpent = lastExpensesResult._sum.amount || 0;
+    const lastIncomeTotal = lastIncomeResult._sum.amount || 0;
 
-    const totalExpenses = currentMonthExpenses.reduce((sum, t) => sum + t.amount, 0);
-    const lastMonthTotal = lastMonthExpenses.reduce((sum, t) => sum + t.amount, 0);
-    const totalIncome = currentMonthIncome.reduce((sum, t) => sum + t.amount, 0);
-
-    // Spending by category
-    const categoryMap = new Map<string, number>();
-    currentMonthExpenses.forEach((t) => {
-      categoryMap.set(t.category, (categoryMap.get(t.category) || 0) + t.amount);
+    // Spending by category this month
+    const categorySpending = await prisma.transaction.groupBy({
+      by: ["category"],
+      where: { userId, type: "expense", date: { gte: startOfMonth, lte: endOfMonth } },
+      _sum: { amount: true },
+      orderBy: { _sum: { amount: "desc" } },
     });
 
-    const lastMonthCategoryMap = new Map<string, number>();
-    lastMonthExpenses.forEach((t) => {
-      lastMonthCategoryMap.set(t.category, (lastMonthCategoryMap.get(t.category) || 0) + t.amount);
+    // Budget alerts
+    const budgets = await prisma.budget.findMany({ where: { userId } });
+    const budgetAlerts = budgets.map((budget) => {
+      const categoryData = categorySpending.find((c) => c.category === budget.category);
+      const spent = categoryData?._sum.amount || 0;
+      const percentage = Math.round((spent / budget.amount) * 100);
+      let status: "safe" | "warning" | "over" = "safe";
+      if (percentage >= 100) status = "over";
+      else if (percentage >= 75) status = "warning";
+      return { ...budget, spent, percentage, status };
     });
 
-    const sortedCategories = [...categoryMap.entries()].sort((a, b) => b[1] - a[1]);
-    const topCategory = sortedCategories[0];
-
-    // Budgets
-    const budgets = await Budget.find({ userId: user.userId }).lean();
-    const budgetAlerts: string[] = [];
-    budgets.forEach((b) => {
-      const spent = categoryMap.get(b.category) || 0;
-      const percentage = (spent / b.amount) * 100;
-      if (percentage >= 90) {
-        budgetAlerts.push(`You've used ${Math.round(percentage)}% of your ${b.category} budget.`);
-      } else if (percentage >= 75) {
-        budgetAlerts.push(`Heads up: ${Math.round(percentage)}% of your ${b.category} budget is used.`);
-      }
+    // Active subscriptions
+    const activeSubscriptions = await prisma.subscription.findMany({
+      where: { userId, active: true },
     });
-
-    // Subscriptions
-    const subscriptions = await Subscription.find({ userId: user.userId, isActive: true }).lean();
-    const totalMonthlySubscriptions = subscriptions.reduce((sum, s) => {
+    const monthlySubCost = activeSubscriptions.reduce((sum, s) => {
+      if (s.billingCycle === "monthly") return sum + s.amount;
       if (s.billingCycle === "yearly") return sum + s.amount / 12;
       if (s.billingCycle === "weekly") return sum + s.amount * 4;
-      if (s.billingCycle === "quarterly") return sum + s.amount / 3;
       return sum + s.amount;
     }, 0);
 
-    // Generate insights
-    const insights = [];
-
-    // Spending comparison
-    if (lastMonthTotal > 0) {
-      const change = ((totalExpenses - lastMonthTotal) / lastMonthTotal) * 100;
-      if (change < -5) {
-        insights.push({
-          type: "trend",
-          icon: "📈",
-          title: "Positive Trend",
-          message: `Your spending is ${Math.abs(Math.round(change))}% lower than last month. Great job!`,
-          severity: "success",
-        });
-      } else if (change > 10) {
-        insights.push({
-          type: "alert",
-          icon: "🔎",
-          title: "Spending Alert",
-          message: `Your spending increased by ${Math.round(change)}% compared to last month.`,
-          severity: "warning",
-        });
-      }
-    }
-
-    // Top category insight
-    if (topCategory) {
-      const [category, amount] = topCategory;
-      const lastMonthAmount = lastMonthCategoryMap.get(category) || 0;
-      if (lastMonthAmount > 0 && amount > lastMonthAmount) {
-        const categoryIncrease = Math.round(((amount - lastMonthAmount) / lastMonthAmount) * 100);
-        const potentialSaving = Math.round(amount * 0.2);
-        insights.push({
-          type: "suggestion",
-          icon: "💡",
-          title: `Smart Suggestion - ${category}`,
-          message: `Your ${category.toLowerCase()} spending increased by ${categoryIncrease}%. Reducing by 20% could save approximately ₹${potentialSaving.toLocaleString("en-IN")}/month.`,
-          severity: "info",
-        });
-      }
-    }
+    // Build insights
+    const insights: { icon: string; title: string; message: string; type: string }[] = [];
 
     // Savings rate
     if (totalIncome > 0) {
-      const savingsRate = Math.round(((totalIncome - totalExpenses) / totalIncome) * 100);
-      if (savingsRate > 20) {
+      const savingsRate = Math.round(((totalIncome - totalSpent) / totalIncome) * 100);
+      if (savingsRate >= 20) {
         insights.push({
-          type: "trend",
           icon: "📈",
           title: "Great Savings Rate",
           message: `You're saving ${savingsRate}% of your income this month. That's above the recommended 20%!`,
-          severity: "success",
+          type: "success",
         });
-      } else if (savingsRate < 10 && totalIncome > 0) {
+      } else if (savingsRate < 10) {
         insights.push({
-          type: "alert",
           icon: "⚠️",
           title: "Low Savings Rate",
           message: `You're only saving ${savingsRate}% of your income. Try to aim for at least 20%.`,
-          severity: "warning",
+          type: "warning",
+        });
+      }
+    }
+
+    // Spending comparison
+    if (lastSpent > 0) {
+      const change = Math.round(((totalSpent - lastSpent) / lastSpent) * 100);
+      if (change > 10) {
+        insights.push({
+          icon: "📊",
+          title: "Spending Increased",
+          message: `Your spending increased by ${change}% compared to last month.`,
+          type: "warning",
+        });
+      } else if (change < -10) {
+        insights.push({
+          icon: "🎉",
+          title: "Spending Decreased",
+          message: `Great job! Your spending decreased by ${Math.abs(change)}% compared to last month.`,
+          type: "success",
         });
       }
     }
 
     // Budget alerts
-    budgetAlerts.forEach((alert) => {
-      insights.push({
-        type: "budget",
-        icon: "🎯",
-        title: "Budget Progress",
-        message: alert,
-        severity: alert.includes("90") ? "danger" : "warning",
-      });
+    budgetAlerts.forEach((b) => {
+      if (b.status === "over") {
+        insights.push({
+          icon: "🎯",
+          title: "Budget Exceeded",
+          message: `You've used ${b.percentage}% of your ${b.category} budget.`,
+          type: "warning",
+        });
+      } else if (b.status === "warning") {
+        insights.push({
+          icon: "🎯",
+          title: "Budget Warning",
+          message: `Heads up: ${b.percentage}% of your ${b.category} budget is used.`,
+          type: "warning",
+        });
+      }
     });
 
-    // Subscription alert
-    if (subscriptions.length > 0) {
-      const annualCost = Math.round(totalMonthlySubscriptions * 12);
+    // Subscription overview
+    if (activeSubscriptions.length > 0) {
+      const annualCost = Math.round(monthlySubCost * 12);
       insights.push({
-        type: "subscription",
         icon: "⚠️",
         title: "Subscription Overview",
-        message: `You have ${subscriptions.length} active subscriptions costing approximately ₹${Math.round(totalMonthlySubscriptions).toLocaleString("en-IN")}/month (₹${annualCost.toLocaleString("en-IN")}/year).`,
-        severity: "info",
+        message: `You have ${activeSubscriptions.length} active subscriptions costing approximately ₹${Math.round(monthlySubCost).toLocaleString("en-IN")}/month (₹${annualCost.toLocaleString("en-IN")}/year).`,
+        type: "info",
       });
     }
 
-    // Upcoming renewals
-    const upcomingRenewals = subscriptions.filter((s) => {
-      const renewalDate = new Date(s.renewalDate);
-      const daysUntil = Math.ceil((renewalDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      return daysUntil <= 7 && daysUntil >= 0;
+    // Top category
+    if (categorySpending.length > 0) {
+      const top = categorySpending[0];
+      insights.push({
+        icon: "🔍",
+        title: "Top Spending Category",
+        message: `Your biggest expense category this month is ${top.category} at ₹${(top._sum.amount || 0).toLocaleString("en-IN")}.`,
+        type: "info",
+      });
+    }
+
+    return NextResponse.json({
+      insights,
+      summary: {
+        totalSpent,
+        totalIncome,
+        lastSpent,
+        lastIncome: lastIncomeTotal,
+        savingsRate: totalIncome > 0 ? Math.round(((totalIncome - totalSpent) / totalIncome) * 100) : 0,
+        categorySpending: categorySpending.map((c) => ({
+          category: c.category,
+          amount: c._sum.amount || 0,
+        })),
+        budgetAlerts,
+        monthlySubCost: Math.round(monthlySubCost),
+      },
     });
-
-    if (upcomingRenewals.length > 0) {
-      const names = upcomingRenewals.map((s) => s.name).join(", ");
-      insights.push({
-        type: "subscription",
-        icon: "🔔",
-        title: "Upcoming Renewals",
-        message: `${names} ${upcomingRenewals.length === 1 ? "renews" : "renew"} within the next 7 days.`,
-        severity: "warning",
-      });
-    }
-
-    // Yearly projection
-    if (totalIncome > 0 && totalExpenses > 0) {
-      const monthlySavings = totalIncome - totalExpenses;
-      const yearlyProjection = monthlySavings * 12;
-      insights.push({
-        type: "trend",
-        icon: "📊",
-        title: "Yearly Projection",
-        message: `At your current rate, you're on track to save approximately ₹${yearlyProjection.toLocaleString("en-IN")} this year.`,
-        severity: "info",
-      });
-    }
-
-    return NextResponse.json({ insights });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("Get insights error:", error);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
