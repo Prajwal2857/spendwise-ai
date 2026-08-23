@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
+import { extractText } from "unpdf";
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   Food: ["swiggy", "zomato", "restaurant", "cafe", "food", "pizza", "burger", "chai", "coffee", "mcdonald", "kfc", "subway", "domino", "starbucks"],
@@ -22,32 +23,6 @@ function categorizeMerchant(text: string): string {
   return "Other";
 }
 
-async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-  // Disable worker for serverless environments
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer),
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-  });
-  const pdfDoc = await loadingTask.promise;
-  let fullText = "";
-
-  for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i);
-    const content = await page.getTextContent();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const strings = content.items.filter((item: any) => item.str).map((item: any) => item.str);
-    fullText += strings.join(" ") + "\n";
-  }
-
-  return fullText;
-}
-
 function parseTransactionsFromText(text: string) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const transactions: { merchant: string; amount: number; type: string; date: string }[] = [];
@@ -67,7 +42,6 @@ function parseTransactionsFromText(text: string) {
     }
     if (!dateStr) continue;
 
-    // Find amounts
     const amtRegex = /(?:₹|INR|Rs\.?)\s*([\d,]+\.?\d{0,2})|(?<!\w)([\d,]+\.\d{2})(?!\w)/g;
     const amounts: { value: number; raw: string }[] = [];
     let amtMatch;
@@ -77,11 +51,9 @@ function parseTransactionsFromText(text: string) {
     }
     if (amounts.length === 0) continue;
 
-    // CR/DR detection
     const isCredit = /\b(?:CR|Cr|credit|CREDIT)\b/i.test(line) || line.includes("(Cr)") || line.includes("(CREDIT)");
     const isDebit = /\b(?:DR|Dr|debit|DEBIT)\b/i.test(line) || line.includes("(Dr)") || line.includes("(DEBIT)");
 
-    // Extract merchant
     let merchant = line;
     for (const pattern of datePatterns) merchant = merchant.replace(pattern, "");
     for (const amt of amounts) merchant = merchant.replace(amt.raw, "");
@@ -125,17 +97,20 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const text = await extractTextFromPDF(buffer);
+    const uint8 = new Uint8Array(arrayBuffer);
 
-    if (!text.trim()) {
+    // Extract text from PDF using unpdf
+    const result = await extractText(uint8);
+    const fullText = Array.isArray(result.text) ? result.text.join("\n") : result.text;
+
+    if (!fullText || !fullText.trim()) {
       return NextResponse.json({ error: "Could not extract text from PDF. It may be a scanned/image PDF." }, { status: 400 });
     }
 
-    const parsed = parseTransactionsFromText(text);
+    const parsed = parseTransactionsFromText(fullText);
 
     if (parsed.length === 0) {
-      return NextResponse.json({ error: "No transactions found in the PDF.", textPreview: text.substring(0, 500) }, { status: 400 });
+      return NextResponse.json({ error: "No transactions found in the PDF.", textPreview: String(fullText).substring(0, 500) }, { status: 400 });
     }
 
     let imported = 0;
