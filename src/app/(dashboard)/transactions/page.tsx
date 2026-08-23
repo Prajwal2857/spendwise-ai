@@ -166,7 +166,7 @@ export default function TransactionsPage() {
       const data = await res.json();
 
       if (res.ok) {
-        const r = data.result;
+        const r = data.summary || data.result;
         toast.success(
           `Imported ${r.imported} transactions (${r.duplicates} duplicates, ${r.needsReview} need review)`
         );
