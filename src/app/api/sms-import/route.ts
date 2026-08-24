@@ -95,21 +95,30 @@ function parseSingleSMS(sms: string): ParsedTransaction | null {
   // Extract payee/payer name
   let merchant = "Unknown";
   const namePatterns = [
-    /(?:to|paid to|sent to|payee[:\s]+|beneficiary[:\s]+|merchant[:\s]+|credited to)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,50})/i,
-    /(?:from|received from|payer[:\s]+|sender[:\s]+)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,50})/i,
+    /(?:beneficiary[:\s]+|payee[:\s]+|merchant[:\s]+)\s*([A-Za-z][A-Za-z0-9\s&._-]{1,30})/i,
+    /(?:paid to|sent to)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,40})/i,
+    /(?:from|received from|payer[:\s]+|sender[:\s]+|salary from)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,40})/i,
+    /(?:to|credited to)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,40})/i,
     /(?:at|@)\s+([A-Za-z][A-Za-z0-9\s&._-]{1,30})/i,
   ];
+
+  // Common phrases that aren't merchant names
+  const skipWords = /^(your|account|bank|a\/c|wallet|number|no|the|this|my)\b/i;
 
   for (const pattern of namePatterns) {
     const match = text.match(pattern);
     if (match) {
       let name = match[1].trim();
-      // Clean up the name - remove trailing words that aren't part of the name
-      name = name.replace(/\s+(via|on|at|ref|upi|transaction|using|through|for|date|time|hrs|am|pm|inr|rs|₹).*$/i, "").trim();
+      // Clean up trailing words that aren't part of the name
+      name = name.replace(/\s+(via|on|at|ref|upi|transaction|using|through|for|date|time|hrs|am|pm|inr|rs|₹|debit|credit|paid|sent|received|subscription|payment|bill|order|no|number|is|was|has|been|successfully|completed|from|to|your|account|wallet).*$/i, "").trim();
+      // Remove trailing punctuation
+      name = name.replace(/[.,;:]+$/g, "").trim();
       // Remove phone numbers
       name = name.replace(/\s*\d{10,}\s*/g, "").trim();
       // Remove UPI IDs
       name = name.replace(/\s*[\w.-]+@[\w.-]+\s*/g, "").trim();
+      // Skip if it starts with a common non-merchant word
+      if (skipWords.test(name)) continue;
       if (name.length >= 2 && name.length <= 50) {
         merchant = name;
         break;
@@ -128,6 +137,14 @@ function parseSingleSMS(sms: string): ParsedTransaction | null {
         merchant = match[1];
         break;
       }
+    }
+  }
+
+  // Last resort: try to find a capitalized word that looks like a brand/merchant
+  if (merchant === "Unknown") {
+    const brandMatch = text.match(/\b([A-Z][a-zA-Z]{2,20})\b/);
+    if (brandMatch && !/^(UPI|INR|RS|REF|TXN|DATE|TIME|AMT|SMS|OTP|YOUR|THIS|THE|HAS|WAS|IS|PAID|SENT|RECEIVED|CREDIT|DEBIT|BANK)$/i.test(brandMatch[1])) {
+      merchant = brandMatch[1];
     }
   }
 
