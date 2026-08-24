@@ -45,8 +45,10 @@ export default function TransactionsPage() {
     recurring: false,
   });
 
-  // CSV import state
+  // File import state
   const [importing, setImporting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const loadTransactions = useCallback(async () => {
     const token = localStorage.getItem("token");
@@ -146,12 +148,17 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileImport = async (file: File) => {
     if (!file) return;
 
     setImporting(true);
     const token = localStorage.getItem("token");
+
+    if (!token) {
+      toast.error("Please log in to import files");
+      setImporting(false);
+      return;
+    }
 
     try {
       const formData = new FormData();
@@ -171,15 +178,28 @@ export default function TransactionsPage() {
           `Imported ${r.imported} transactions (${r.duplicates} duplicates, ${r.needsReview} need review)`
         );
         loadTransactions();
+        setShowImportModal(false);
       } else {
         toast.error(data.error || "Import failed");
       }
-    } catch {
-      toast.error("Failed to import file");
+    } catch (err) {
+      toast.error("Failed to import file. Please check your connection and try again.");
     } finally {
       setImporting(false);
-      e.target.value = "";
     }
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileImport(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileImport(file);
+    e.target.value = "";
   };
 
   const resetForm = () => {
@@ -221,18 +241,13 @@ export default function TransactionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              onChange={handleFileImport}
-              className="hidden"
-            />
-            <span className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors">
-              <Upload className="w-4 h-4" />
-              {importing ? "Importing..." : "Import File"}
-            </span>
-          </label>
+          <Button
+            variant="outline"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Import File
+          </Button>
           <Button
             onClick={() => {
               resetForm();
@@ -406,6 +421,66 @@ export default function TransactionsPage() {
           </div>
         )}
       </Card>
+
+      {/* Import Modal */}
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => { setShowImportModal(false); }}
+        title="Import Transactions"
+      >
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleFileDrop}
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
+            dragOver ? "border-emerald-500 bg-emerald-50" : "border-slate-300 hover:border-emerald-400 hover:bg-slate-50"
+          }`}
+          onClick={() => document.getElementById("import-file-input")?.click()}
+        >
+          <input
+            id="import-file-input"
+            type="file"
+            accept=".csv,.pdf,.jpg,.jpeg,.png"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          {importing ? (
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+              <p className="text-sm font-medium text-slate-700">Importing transactions...</p>
+              <p className="text-xs text-slate-400 mt-1">This may take a moment for PDFs and images</p>
+            </div>
+          ) : (
+            <div>
+              <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <Upload className="w-7 h-7 text-slate-400" />
+              </div>
+              <p className="text-sm font-medium text-slate-700 mb-1">
+                Drag & drop a file here, or click to browse
+              </p>
+              <p className="text-xs text-slate-400">
+                Supports CSV, PDF, JPG, and PNG — bank statements and receipts
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="mt-4 p-3 bg-slate-50 rounded-lg">
+          <p className="text-xs font-medium text-slate-600 mb-1">Supported formats:</p>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { ext: ".csv", desc: "Bank CSV exports" },
+              { ext: ".pdf", desc: "Bank statement PDFs" },
+              { ext: ".jpg/.png", desc: "Screenshot/scan of statements" },
+            ].map((f) => (
+              <span key={f.ext} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-600">
+                <span className="font-mono font-medium text-emerald-600">{f.ext}</span>
+                {f.desc}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Auto-detects Indian bank formats (SBI, HDFC, ICICI, Axis, etc.)</p>
+        </div>
+      </Modal>
 
       {/* Add/Edit Modal */}
       <Modal
