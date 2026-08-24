@@ -11,6 +11,9 @@ import {
   Edit2,
   Trash2,
   X,
+  MessageSquare,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -49,6 +52,15 @@ export default function TransactionsPage() {
   const [importing, setImporting] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+
+  // SMS import state
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsText, setSmsText] = useState("");
+  const [smsImporting, setSmsImporting] = useState(false);
+  const [smsPreview, setSmsPreview] = useState<{
+    transactions: { merchant: string; amount: number; type: string; date: string; upiRef: string }[];
+    summary: { total: number; parsed: number; imported: number; duplicates: number; failed: number };
+  } | null>(null);
 
   const loadTransactions = useCallback(async () => {
     const token = localStorage.getItem("token");
@@ -202,6 +214,55 @@ export default function TransactionsPage() {
     e.target.value = "";
   };
 
+  const handleSmsImport = async () => {
+    if (!smsText.trim()) {
+      toast.error("Please paste your UPI SMS messages first");
+      return;
+    }
+
+    setSmsImporting(true);
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      toast.error("Please log in to import SMS");
+      setSmsImporting(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/sms-import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ messages: smsText }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSmsPreview(data);
+        toast.success(
+          `Found ${data.summary.parsed} transactions — ${data.summary.imported} imported, ${data.summary.duplicates} duplicates`
+        );
+        loadTransactions();
+      } else {
+        toast.error(data.error || "Failed to parse SMS messages");
+      }
+    } catch {
+      toast.error("Failed to import SMS. Please try again.");
+    } finally {
+      setSmsImporting(false);
+    }
+  };
+
+  const handleSmsConfirm = () => {
+    setSmsText("");
+    setSmsPreview(null);
+    setShowSmsModal(false);
+  };
+
   const resetForm = () => {
     setForm({
       merchant: "",
@@ -247,6 +308,13 @@ export default function TransactionsPage() {
           >
             <Upload className="w-4 h-4 mr-2" />
             Import File
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setShowSmsModal(true); setSmsPreview(null); }}
+          >
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Import SMS
           </Button>
           <Button
             onClick={() => {
@@ -480,6 +548,104 @@ export default function TransactionsPage() {
           </div>
           <p className="text-xs text-slate-400 mt-2">Auto-detects Indian bank formats (SBI, HDFC, ICICI, Axis, etc.)</p>
         </div>
+      </Modal>
+
+      {/* SMS Import Modal */}
+      <Modal
+        isOpen={showSmsModal}
+        onClose={() => { setShowSmsModal(false); setSmsPreview(null); }}
+        title="Import from UPI SMS"
+      >
+        {smsPreview ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-emerald-800">Found {smsPreview.summary.parsed} transactions</p>
+                <p className="text-emerald-600 text-xs mt-0.5">
+                  {smsPreview.summary.imported} imported · {smsPreview.summary.duplicates} duplicates{smsPreview.summary.failed > 0 ? ` · ${smsPreview.summary.failed} skipped` : ""}
+                </p>
+              </div>
+            </div>
+            {smsPreview.transactions.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-2 text-xs font-medium text-slate-500">Merchant</th>
+                      <th className="text-right py-2 text-xs font-medium text-slate-500">Amount</th>
+                      <th className="text-center py-2 text-xs font-medium text-slate-500">Type</th>
+                      <th className="text-left py-2 text-xs font-medium text-slate-500">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {smsPreview.transactions.map((tx, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="py-2 text-slate-900 font-medium">{tx.merchant}</td>
+                        <td className="py-2 text-right font-mono">{formatCurrency(tx.amount)}</td>
+                        <td className="py-2 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${tx.type === "income" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                            {tx.type === "income" ? "Income" : "Expense"}
+                          </span>
+                        </td>
+                        <td className="py-2 text-slate-500 text-xs">{tx.date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={handleSmsConfirm} className="flex-1">
+                Done
+              </Button>
+              <Button onClick={() => { setSmsPreview(null); setSmsText(""); }} className="flex-1">
+                Import More
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-slate-600 mb-2">
+                Paste your UPI transaction SMS messages below — one per line. We auto-detect formats from GPay, PhonePe, Paytm, BHIM, and all major banks.
+              </p>
+              <textarea
+                value={smsText}
+                onChange={(e) => setSmsText(e.target.value)}
+                placeholder="Paste UPI SMS here - one per line. e.g. Rs.500 paid to Swiggy via GPay..."
+                className="w-full h-48 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+              />
+            </div>
+            <Button
+              onClick={handleSmsImport}
+              disabled={smsImporting || !smsText.trim()}
+              className="w-full"
+            >
+              {smsImporting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Parsing SMS...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Parse & Import Transactions
+                </span>
+              )}
+            </Button>
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <p className="text-xs font-medium text-slate-600 mb-1">Supported apps:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["Google Pay", "PhonePe", "Paytm", "BHIM", "CRED", "SBI", "HDFC", "ICICI", "Axis"].map((app) => (
+                  <span key={app} className="px-2 py-0.5 bg-white border border-slate-200 rounded text-xs text-slate-600">
+                    {app}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Add/Edit Modal */}
