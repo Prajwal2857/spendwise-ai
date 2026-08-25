@@ -8,7 +8,7 @@ function cuid() {
 }
 
 async function main() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   console.log("Connected to database. Seeding...");
 
   // Create demo user
