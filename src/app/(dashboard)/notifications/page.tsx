@@ -73,8 +73,8 @@ export default function NotificationsPage() {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setNotifications(notifications.map((n) => (n._id === id ? { ...n, read: true } : n)));
-      setUnreadNotifications(Math.max(0, notifications.filter((n) => !n.read && n._id !== id).length));
+      setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setUnreadNotifications(Math.max(0, notifications.filter((n) => !n.read && n.id !== id).length));
     } catch {
       // silent
     }
@@ -107,9 +107,9 @@ export default function NotificationsPage() {
         <div className="space-y-2">
           {notifications.map((n) => (
             <Card
-              key={n._id}
+              key={n.id}
               className={`p-4 cursor-pointer transition-colors ${!n.read ? "bg-emerald-50/50 border-emerald-100" : ""}`}
-              onClick={() => !n.read && markRead(n._id)}
+              onClick={() => !n.read && markRead(n.id)}
             >
               <div className="flex items-start gap-3">
                 <span className="text-xl mt-0.5">{typeIcons[n.type] || "ℹ️"}</span>

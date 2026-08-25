@@ -59,12 +59,12 @@ export const useStore = create<AppState>((set) => ({
   updateTransaction: (id, updates) =>
     set((state) => ({
       transactions: state.transactions.map((t) =>
-        t._id === id ? { ...t, ...updates } : t
+        t.id === id ? { ...t, ...updates } : t
       ),
     })),
   removeTransaction: (id) =>
     set((state) => ({
-      transactions: state.transactions.filter((t) => t._id !== id),
+      transactions: state.transactions.filter((t) => t.id !== id),
     })),
   setBudgets: (budgets) => set({ budgets }),
   addBudget: (budget) =>
@@ -72,12 +72,12 @@ export const useStore = create<AppState>((set) => ({
   updateBudget: (id, updates) =>
     set((state) => ({
       budgets: state.budgets.map((b) =>
-        b._id === id ? { ...b, ...updates } : b
+        b.id === id ? { ...b, ...updates } : b
       ),
     })),
   removeBudget: (id) =>
     set((state) => ({
-      budgets: state.budgets.filter((b) => b._id !== id),
+      budgets: state.budgets.filter((b) => b.id !== id),
     })),
   setGoals: (goals) => set({ goals }),
   addGoal: (goal) =>
@@ -85,12 +85,12 @@ export const useStore = create<AppState>((set) => ({
   updateGoal: (id, updates) =>
     set((state) => ({
       goals: state.goals.map((g) =>
-        g._id === id ? { ...g, ...updates } : g
+        g.id === id ? { ...g, ...updates } : g
       ),
     })),
   removeGoal: (id) =>
     set((state) => ({
-      goals: state.goals.filter((g) => g._id !== id),
+      goals: state.goals.filter((g) => g.id !== id),
     })),
   setSubscriptions: (subscriptions) => set({ subscriptions }),
   addSubscription: (sub) =>
@@ -98,12 +98,12 @@ export const useStore = create<AppState>((set) => ({
   updateSubscription: (id, updates) =>
     set((state) => ({
       subscriptions: state.subscriptions.map((s) =>
-        s._id === id ? { ...s, ...updates } : s
+        s.id === id ? { ...s, ...updates } : s
       ),
     })),
   removeSubscription: (id) =>
     set((state) => ({
-      subscriptions: state.subscriptions.filter((s) => s._id !== id),
+      subscriptions: state.subscriptions.filter((s) => s.id !== id),
     })),
   setNotifications: (notifications) => set({ notifications }),
   setUnreadNotifications: (count) => set({ unreadNotifications: count }),

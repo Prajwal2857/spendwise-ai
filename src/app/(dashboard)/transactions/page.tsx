@@ -100,7 +100,7 @@ export default function TransactionsPage() {
 
     try {
       if (editingTx) {
-        const res = await fetch(`/api/transactions/${editingTx._id}`, {
+        const res = await fetch(`/api/transactions/${editingTx.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -113,7 +113,7 @@ export default function TransactionsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          updateTransaction(editingTx._id, data.transaction);
+          updateTransaction(editingTx.id, data.transaction);
           toast.success("Transaction updated");
         }
       } else {
@@ -398,7 +398,7 @@ export default function TransactionsPage() {
           <div className="divide-y divide-slate-50">
             {transactions.map((tx) => (
               <div
-                key={tx._id}
+                key={tx.id}
                 className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -454,7 +454,7 @@ export default function TransactionsPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(tx._id)}
+                      onClick={() => handleDelete(tx.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />

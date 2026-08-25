@@ -1,5 +1,5 @@
 export interface User {
-  _id: string;
+  id: string;
   name: string;
   email: string;
   profileImage?: string;
@@ -18,7 +18,7 @@ export interface User {
 }
 
 export interface Account {
-  _id: string;
+  id: string;
   userId: string;
   accountName: string;
   accountType: "bank" | "credit_card" | "debit_card" | "cash" | "upi" | "other";
@@ -29,7 +29,7 @@ export interface Account {
 }
 
 export interface Transaction {
-  _id: string;
+  id: string;
   userId: string;
   accountId?: string;
   merchant: string;
@@ -45,7 +45,7 @@ export interface Transaction {
 }
 
 export interface Budget {
-  _id: string;
+  id: string;
   userId: string;
   category: string;
   amount: number;
@@ -56,7 +56,7 @@ export interface Budget {
 }
 
 export interface SavingsGoal {
-  _id: string;
+  id: string;
   userId: string;
   name: string;
   targetAmount: number;
@@ -68,7 +68,7 @@ export interface SavingsGoal {
 }
 
 export interface Subscription {
-  _id: string;
+  id: string;
   userId: string;
   name: string;
   amount: number;
@@ -81,7 +81,7 @@ export interface Subscription {
 }
 
 export interface Notification {
-  _id: string;
+  id: string;
   userId: string;
   title: string;
   message: string;

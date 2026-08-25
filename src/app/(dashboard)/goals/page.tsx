@@ -61,7 +61,7 @@ export default function GoalsPage() {
 
     try {
       if (editing) {
-        const res = await fetch(`/api/goals/${editing._id}`, {
+        const res = await fetch(`/api/goals/${editing.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -76,7 +76,7 @@ export default function GoalsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          updateGoal(editing._id, data.goal);
+          updateGoal(editing.id, data.goal);
           toast.success("Goal updated");
         }
       } else {
@@ -116,7 +116,7 @@ export default function GoalsPage() {
     const newAmount = showDeposit.currentAmount + parseFloat(depositAmount);
 
     try {
-      const res = await fetch(`/api/goals/${showDeposit._id}`, {
+      const res = await fetch(`/api/goals/${showDeposit.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -126,7 +126,7 @@ export default function GoalsPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        updateGoal(showDeposit._id, data.goal);
+        updateGoal(showDeposit.id, data.goal);
         toast.success(`Added ${formatCurrency(parseFloat(depositAmount))} to ${showDeposit.name}`);
         setShowDeposit(null);
         setDepositAmount("");
@@ -215,7 +215,7 @@ export default function GoalsPage() {
             const isComplete = goal.currentAmount >= goal.targetAmount;
 
             return (
-              <Card key={goal._id} className="p-5">
+              <Card key={goal.id} className="p-5">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">{goal.icon || "🎯"}</span>
@@ -246,7 +246,7 @@ export default function GoalsPage() {
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(goal._id)}
+                      onClick={() => handleDelete(goal.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

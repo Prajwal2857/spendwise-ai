@@ -72,7 +72,7 @@ export default function AccountsPage() {
 
     try {
       if (editing) {
-        const res = await fetch(`/api/accounts/${editing._id}`, {
+        const res = await fetch(`/api/accounts/${editing.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -82,7 +82,7 @@ export default function AccountsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          setAccounts((prev) => prev.map((a) => (a._id === editing._id ? data.account : a)));
+          setAccounts((prev) => prev.map((a) => (a.id === editing.id ? data.account : a)));
           toast.success("Account updated");
         }
       } else {
@@ -117,7 +117,7 @@ export default function AccountsPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        setAccounts((prev) => prev.filter((a) => a._id !== id));
+        setAccounts((prev) => prev.filter((a) => a.id !== id));
         toast.success("Account deleted");
       }
     } catch {
@@ -153,7 +153,7 @@ export default function AccountsPage() {
       ) : accounts.length > 0 ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {accounts.map((account) => (
-            <Card key={account._id} className="p-5">
+            <Card key={account.id} className="p-5">
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600">
@@ -168,7 +168,7 @@ export default function AccountsPage() {
                   <button onClick={() => { setEditing(account); setForm({ accountName: account.accountName, accountType: account.accountType, balance: account.balance.toString(), institution: account.institution || "" }); setShowModal(true); }} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(account._id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600">
+                  <button onClick={() => handleDelete(account.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>

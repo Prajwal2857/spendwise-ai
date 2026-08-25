@@ -58,7 +58,7 @@ export default function SubscriptionsPage() {
 
     try {
       if (editing) {
-        const res = await fetch(`/api/subscriptions/${editing._id}`, {
+        const res = await fetch(`/api/subscriptions/${editing.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -71,7 +71,7 @@ export default function SubscriptionsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          updateSubscription(editing._id, data.subscription);
+          updateSubscription(editing.id, data.subscription);
           toast.success("Subscription updated");
         }
       } else {
@@ -121,7 +121,7 @@ export default function SubscriptionsPage() {
   const handleToggle = async (sub: Subscription) => {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`/api/subscriptions/${sub._id}`, {
+      const res = await fetch(`/api/subscriptions/${sub.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -131,7 +131,7 @@ export default function SubscriptionsPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        updateSubscription(sub._id, data.subscription);
+        updateSubscription(sub.id, data.subscription);
       }
     } catch {
       toast.error("Failed to update");
@@ -224,7 +224,7 @@ export default function SubscriptionsPage() {
             const isUpcoming = daysUntilRenewal <= 7 && daysUntilRenewal >= 0;
 
             return (
-              <Card key={sub._id} className={`p-5 ${!sub.isActive ? "opacity-60" : ""}`}>
+              <Card key={sub.id} className={`p-5 ${!sub.isActive ? "opacity-60" : ""}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
@@ -276,7 +276,7 @@ export default function SubscriptionsPage() {
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(sub._id)}
+                        onClick={() => handleDelete(sub.id)}
                         className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

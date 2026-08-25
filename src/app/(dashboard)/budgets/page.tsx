@@ -76,7 +76,7 @@ export default function BudgetsPage() {
 
     try {
       if (editing) {
-        const res = await fetch(`/api/budgets/${editing._id}`, {
+        const res = await fetch(`/api/budgets/${editing.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -86,7 +86,7 @@ export default function BudgetsPage() {
         });
         const data = await res.json();
         if (res.ok) {
-          updateBudget(editing._id, data.budget);
+          updateBudget(editing.id, data.budget);
           toast.success("Budget updated");
         }
       } else {
@@ -183,7 +183,7 @@ export default function BudgetsPage() {
             const remaining = Math.max(budget.amount - spent, 0);
 
             return (
-              <Card key={budget._id} className="p-5">
+              <Card key={budget.id} className="p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="text-xl">{getCategoryEmoji(budget.category)}</span>
@@ -201,7 +201,7 @@ export default function BudgetsPage() {
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(budget._id)}
+                      onClick={() => handleDelete(budget.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

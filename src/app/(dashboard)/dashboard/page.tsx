@@ -391,7 +391,7 @@ export default function DashboardPage() {
             {recentTransactions.length > 0 ? (
               <div className="divide-y divide-slate-50">
                 {recentTransactions.map((tx) => (
-                  <div key={tx._id} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 transition-colors">
+                  <div key={tx.id} className="flex items-center justify-between px-6 py-3 hover:bg-slate-50 transition-colors">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg">
                         {getCategoryEmoji(tx.category)}

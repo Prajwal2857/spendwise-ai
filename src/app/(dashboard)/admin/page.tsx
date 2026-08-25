@@ -16,8 +16,8 @@ interface AdminStats {
   totalTransactions: number;
   totalBudgets: number;
   totalSubscriptions: number;
-  topCategories: { _id: string; count: number; totalAmount: number }[];
-  recentUsers: { _id: string; name: string; email: string; role: string; createdAt: string }[];
+  topCategories: { id: string; count: number; totalAmount: number }[];
+  recentUsers: { id: string; name: string; email: string; role: string; createdAt: string }[];
 }
 
 export default function AdminPage() {
@@ -136,10 +136,10 @@ export default function AdminPage() {
             {stats?.topCategories && stats.topCategories.length > 0 ? (
               <div className="divide-y divide-slate-50">
                 {stats.topCategories.map((cat, i) => (
-                  <div key={cat._id} className="flex items-center justify-between px-6 py-3">
+                  <div key={cat.id} className="flex items-center justify-between px-6 py-3">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-medium text-slate-400 w-6">{i + 1}.</span>
-                      <span className="text-sm font-medium text-slate-900">{cat._id}</span>
+                      <span className="text-sm font-medium text-slate-900">{cat.id}</span>
                     </div>
                     <div className="text-right">
                       <span className="text-sm font-medium tabular-nums">{formatCurrency(cat.totalAmount)}</span>
@@ -166,7 +166,7 @@ export default function AdminPage() {
             {stats?.recentUsers && stats.recentUsers.length > 0 ? (
               <div className="divide-y divide-slate-50">
                 {stats.recentUsers.map((u) => (
-                  <div key={u._id} className="flex items-center justify-between px-6 py-3">
+                  <div key={u.id} className="flex items-center justify-between px-6 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center">
                         <span className="text-sm font-semibold text-emerald-700">{u.name.charAt(0).toUpperCase()}</span>
