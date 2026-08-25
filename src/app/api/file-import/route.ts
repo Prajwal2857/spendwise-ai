@@ -217,8 +217,14 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 
 async function extractTextFromImage(buffer: Buffer): Promise<string> {
   const Tesseract = await import("tesseract.js");
-  const { data } = await Tesseract.recognize(buffer, "eng", {});
-  return data.text;
+  // Add timeout: if OCR takes longer than 30s, fail gracefully
+  const result = await Promise.race([
+    Tesseract.recognize(buffer, "eng", {}),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("OCR timed out after 30 seconds. Try using a PDF or CSV instead.")), 30000)
+    ),
+  ]);
+  return result.data.text;
 }
 
 export async function POST(req: NextRequest) {
@@ -277,7 +283,7 @@ export async function POST(req: NextRequest) {
     let imported = 0;
     let duplicates = 0;
     let needsReview = 0;
-    const newTransactions: {
+    const allCandidates: {
       userId: string; merchant: string; amount: number; type: string;
       category: string; paymentMethod: string; date: Date; notes: string | null;
     }[] = [];
@@ -287,22 +293,40 @@ export async function POST(req: NextRequest) {
       if (!date) { needsReview++; continue; }
       if (isNaN(txn.amount) || txn.amount === 0) { needsReview++; continue; }
 
-      // Deduplication: check for same merchant, date, and amount
-      const existing = await prisma.transaction.findFirst({
-        where: { userId, merchant: txn.merchant, date, amount: txn.amount },
-      });
-      if (existing) { duplicates++; continue; }
-
-      newTransactions.push({
+      allCandidates.push({
         userId, merchant: txn.merchant, amount: txn.amount, type: txn.type,
-        category: categorizeMerchant(txn.merchant), paymentMethod: isCSV ? "Bank Transfer" : "Bank Transfer",
+        category: categorizeMerchant(txn.merchant), paymentMethod: "Bank Transfer",
         date, notes: `Imported from ${isCSV ? "CSV" : isPDF ? "PDF" : "image"}`,
       });
     }
 
-    if (newTransactions.length > 0) {
-      await prisma.transaction.createMany({ data: newTransactions });
-      imported = newTransactions.length;
+    if (allCandidates.length > 0) {
+      // Batch deduplication: find all existing transactions for this user in one query
+      const existingTxs = await prisma.transaction.findMany({
+        where: {
+          userId,
+          OR: allCandidates.map((t) => ({
+            merchant: t.merchant, date: t.date, amount: t.amount,
+          })),
+        },
+        select: { merchant: true, date: true, amount: true },
+      });
+
+      // Build a Set of existing transaction keys for O(1) lookup
+      const existingKeys = new Set(
+        existingTxs.map((t) => `${t.merchant}|${t.date.toISOString()}|${t.amount}`)
+      );
+
+      const newTransactions = allCandidates.filter((t) => {
+        const key = `${t.merchant}|${t.date.toISOString()}|${t.amount}`;
+        if (existingKeys.has(key)) { duplicates++; return false; }
+        return true;
+      });
+
+      if (newTransactions.length > 0) {
+        await prisma.transaction.createMany({ data: newTransactions });
+        imported = newTransactions.length;
+      }
     }
 
     return NextResponse.json({

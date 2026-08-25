@@ -229,9 +229,10 @@ export async function POST(req: NextRequest) {
     let imported = 0;
     let duplicates = 0;
     let needsReview = 0;
-    const newTransactions: {
+    const allCandidates: {
       userId: string; merchant: string; amount: number; type: string;
       category: string; paymentMethod: string; date: Date; notes: string | null;
+      upiRef: string;
     }[] = [];
 
     for (const txn of parsed) {
@@ -239,47 +240,60 @@ export async function POST(req: NextRequest) {
       if (!date) { needsReview++; continue; }
       if (isNaN(txn.amount) || txn.amount === 0) { needsReview++; continue; }
 
-      // Deduplication by UPI reference
-      if (txn.upiRef) {
-        const existing = await prisma.transaction.findFirst({
-          where: {
-            userId,
-            notes: { contains: txn.upiRef },
-          },
-        });
-        if (existing) { duplicates++; continue; }
-      }
-
-      // Also check by merchant + date + amount
-      const existingByDetails = await prisma.transaction.findFirst({
-        where: {
-          userId,
-          merchant: txn.merchant,
-          date,
-          amount: txn.amount,
-        },
-      });
-      if (existingByDetails) { duplicates++; continue; }
-
       const note = txn.upiRef
         ? `UPI Ref: ${txn.upiRef} | Imported from SMS`
         : "Imported from SMS";
 
-      newTransactions.push({
-        userId,
-        merchant: txn.merchant,
-        amount: txn.amount,
-        type: txn.type,
-        category: categorizeMerchant(txn.merchant),
-        paymentMethod: "UPI",
-        date,
-        notes: note,
+      allCandidates.push({
+        userId, merchant: txn.merchant, amount: txn.amount, type: txn.type,
+        category: categorizeMerchant(txn.merchant), paymentMethod: "UPI",
+        date, notes: note, upiRef: txn.upiRef,
       });
     }
 
-    if (newTransactions.length > 0) {
-      await prisma.transaction.createMany({ data: newTransactions });
-      imported = newTransactions.length;
+    if (allCandidates.length > 0) {
+      // Batch deduplication: one query for all merchant+date+amount matches
+      const detailConditions = allCandidates.map((t) => ({
+        userId, merchant: t.merchant, date: t.date, amount: t.amount,
+      }));
+
+      // Also batch-check UPI refs
+      const upiRefs = allCandidates.filter((t) => t.upiRef).map((t) => t.upiRef);
+      const refConditions = upiRefs.map((ref) => ({
+        userId, notes: { contains: ref },
+      }));
+
+      const allConditions = [...detailConditions, ...refConditions];
+      const existingTxs = allConditions.length > 0
+        ? await prisma.transaction.findMany({
+            where: { OR: allConditions },
+            select: { merchant: true, date: true, amount: true, notes: true },
+          })
+        : [];
+
+      // Build lookup sets
+      const existingDetailKeys = new Set(
+        existingTxs.map((t) => `${t.merchant}|${t.date.toISOString()}|${t.amount}`)
+      );
+      const existingRefSet = new Set(
+        existingTxs.filter((t) => t.notes).flatMap((t) => {
+          const match = t.notes?.match(/UPI Ref: (\w+)/);
+          return match ? [match[1]] : [];
+        })
+      );
+
+      const newTransactions = allCandidates.filter((t) => {
+        const detailKey = `${t.merchant}|${t.date.toISOString()}|${t.amount}`;
+        if (existingDetailKeys.has(detailKey)) { duplicates++; return false; }
+        if (t.upiRef && existingRefSet.has(t.upiRef)) { duplicates++; return false; }
+        return true;
+      });
+
+      if (newTransactions.length > 0) {
+        const toInsert = newTransactions.map(({ upiRef, ...rest }) => rest);
+        await prisma.transaction.createMany({ data: toInsert });
+        imported = newTransactions.length;
+      }
     }
 
     return NextResponse.json({
