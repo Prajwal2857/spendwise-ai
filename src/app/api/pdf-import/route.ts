@@ -57,7 +57,10 @@ function parseTransactionsFromText(text: string) {
     let merchant = line;
     for (const pattern of datePatterns) merchant = merchant.replace(pattern, "");
     for (const amt of amounts) merchant = merchant.replace(amt.raw, "");
-    merchant = merchant.replace(/₹|INR|Rs\.?|CR|DR|Cr|Dr|credit|debit|\(Cr\)|\(Dr\)|\(CREDIT\)|\(DEBIT\)/gi, "")
+    // Strip currency symbols and Cr/Dr markers as whole tokens only — matching
+    // them anywhere corrupts descriptions ("SALARY CREDIT" -> "SALARY EDIT").
+    merchant = merchant.replace(/\((?:cr|dr|credit|debit)\)/gi, " ")
+      .replace(/₹|\b(?:inr|rs\.?|cr|dr|credit|debit)\b/gi, " ")
       .replace(/[\s,]+/g, " ").trim();
     if (merchant.length < 2) merchant = "Unknown Transaction";
 

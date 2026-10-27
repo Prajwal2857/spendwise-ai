@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createRequire } from "node:module";
+import { existsSync, mkdirSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { prisma } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 
@@ -56,7 +60,10 @@ function parseTransactionsFromText(text: string) {
     let merchant = line;
     for (const pattern of datePatterns) merchant = merchant.replace(pattern, "");
     for (const amt of amounts) merchant = merchant.replace(amt.raw, "");
-    merchant = merchant.replace(/₹|INR|Rs\.?|CR|DR|Cr|Dr|credit|debit|\(Cr\)|\(Dr\)|\(CREDIT\)|\(DEBIT\)/gi, "")
+    // Strip currency symbols and Cr/Dr markers as whole tokens only — matching
+    // them anywhere corrupts descriptions ("SALARY CREDIT" -> "SALARY EDIT").
+    merchant = merchant.replace(/\((?:cr|dr|credit|debit)\)/gi, " ")
+      .replace(/₹|\b(?:inr|rs\.?|cr|dr|credit|debit)\b/gi, " ")
       .replace(/[\s,]+/g, " ").trim();
     if (merchant.length < 2) merchant = "Unknown Transaction";
 
@@ -82,7 +89,7 @@ function parseTransactionsFromCSV(text: string) {
   // Try to detect column mapping from header
   const headerCols = parseCSVLine(lines[0]);
   const dateIdx = headerCols.findIndex((h) => /date|trans.*date|txn.*date/i.test(h));
-  const descIdx = headerCols.findIndex((h) => /desc|narr|particular|merchant|payee|to\/from|benef/i.test(h));
+  const descIdx = headerCols.findIndex((h) => /desc|narr|particular|merchant|payee|to\/from|benef|remark|detail|info|note/i.test(h));
   const amtIdx = headerCols.findIndex((h) => /amount|amt|sum|total/i.test(h));
   const typeIdx = headerCols.findIndex((h) => /type|debit.*credit|dr.*cr| txn.*type/i.test(h));
   const debitIdx = headerCols.findIndex((h) => /debit|dr|withdraw/i.test(h));
@@ -215,11 +222,52 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   return Array.isArray(result.text) ? result.text.join("\n") : result.text;
 }
 
+let tesseractWorkerPath: string | null | undefined;
+
+/**
+ * tesseract.js derives its worker script path from `__dirname`, but Next's
+ * bundler rewrites `__dirname` to a virtual `/ROOT/...` path in server chunks.
+ * On Windows that resolves to `C:\ROOT\...`, so the worker thread can never be
+ * loaded and every image import fails. Resolve the real on-disk path instead.
+ */
+function resolveTesseractWorkerPath(): string | null {
+  if (tesseractWorkerPath !== undefined) return tesseractWorkerPath;
+
+  const candidates: string[] = [];
+  try {
+    const requireFromCwd = createRequire(path.join(process.cwd(), "index.js"));
+    const pkgPath = requireFromCwd.resolve("tesseract.js/package.json");
+    candidates.push(path.join(path.dirname(pkgPath), "src", "worker-script", "node", "index.js"));
+  } catch {
+    // Resolution from cwd failed (e.g. app running outside the package root);
+    // fall through to the explicit node_modules candidate.
+  }
+  candidates.push(
+    path.join(process.cwd(), "node_modules", "tesseract.js", "src", "worker-script", "node", "index.js")
+  );
+
+  tesseractWorkerPath = candidates.find((candidate) => existsSync(candidate)) ?? null;
+  return tesseractWorkerPath;
+}
+
 async function extractTextFromImage(buffer: Buffer): Promise<string> {
   const Tesseract = await import("tesseract.js");
+
+  const workerPath = resolveTesseractWorkerPath();
+  if (!workerPath) {
+    throw new Error(
+      "OCR could not start because the tesseract worker script was not found. Reinstall dependencies, or import a CSV/PDF instead."
+    );
+  }
+
+  // tesseract caches downloaded language data in cwd by default, which would
+  // drop eng.traineddata into the project root — keep it in the OS temp dir.
+  const cachePath = path.join(os.tmpdir(), "spendwise-ocr-cache");
+  mkdirSync(cachePath, { recursive: true });
+
   // Add timeout: if OCR takes longer than 30s, fail gracefully
   const result = await Promise.race([
-    Tesseract.recognize(buffer, "eng", {}),
+    Tesseract.recognize(buffer, "eng", { workerPath, cachePath }),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("OCR timed out after 30 seconds. Try using a PDF or CSV instead.")), 30000)
     ),

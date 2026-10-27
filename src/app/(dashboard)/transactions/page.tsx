@@ -14,6 +14,7 @@ import {
   MessageSquare,
   CheckCircle,
   AlertCircle,
+  Landmark,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -60,6 +61,16 @@ export default function TransactionsPage() {
   const [smsPreview, setSmsPreview] = useState<{
     transactions: { merchant: string; amount: number; type: string; date: string; upiRef: string }[];
     summary: { total: number; parsed: number; imported: number; duplicates: number; failed: number };
+  } | null>(null);
+
+  // UPI (Razorpay) import state
+  const [showUpiModal, setShowUpiModal] = useState(false);
+  const [upiImporting, setUpiImporting] = useState(false);
+  const [upiError, setUpiError] = useState<string | null>(null);
+  const [upiRange, setUpiRange] = useState({ from: "", to: "" });
+  const [upiPreview, setUpiPreview] = useState<{
+    transactions: { merchant: string; amount: number; type: string; date: string; upiRef: string }[];
+    summary: { total: number; imported: number; duplicates: number; needsReview: number };
   } | null>(null);
 
   const loadTransactions = useCallback(async () => {
@@ -263,6 +274,54 @@ export default function TransactionsPage() {
     setShowSmsModal(false);
   };
 
+  const openUpiModal = () => {
+    const iso = (d: Date) => d.toISOString().split("T")[0];
+    const to = new Date();
+    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+    setUpiRange({ from: iso(from), to: iso(to) });
+    setUpiPreview(null);
+    setUpiError(null);
+    setShowUpiModal(true);
+  };
+
+  const handleUpiImport = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      toast.error("Please log in to import from UPI");
+      return;
+    }
+
+    setUpiImporting(true);
+    setUpiError(null);
+
+    try {
+      const res = await fetch("/api/upi-import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ from: upiRange.from, to: upiRange.to }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setUpiPreview(data);
+        toast.success(
+          `Found ${data.summary.total} UPI transactions — ${data.summary.imported} imported, ${data.summary.duplicates} already saved`
+        );
+        loadTransactions();
+      } else {
+        setUpiError(data.error || "Failed to import from UPI");
+      }
+    } catch {
+      setUpiError("Could not reach the server. Please try again.");
+    } finally {
+      setUpiImporting(false);
+    }
+  };
+
   const resetForm = () => {
     setForm({
       merchant: "",
@@ -315,6 +374,10 @@ export default function TransactionsPage() {
           >
             <MessageSquare className="w-4 h-4 mr-2" />
             Import SMS
+          </Button>
+          <Button variant="outline" onClick={openUpiModal}>
+            <Landmark className="w-4 h-4 mr-2" />
+            Import UPI
           </Button>
           <Button
             onClick={() => {
@@ -643,6 +706,124 @@ export default function TransactionsPage() {
                   </span>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* UPI Import Modal */}
+      <Modal
+        isOpen={showUpiModal}
+        onClose={() => setShowUpiModal(false)}
+        title="Import from UPI (Razorpay)"
+      >
+        {upiPreview ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-emerald-800">
+                  Found {upiPreview.summary.total} UPI transactions
+                </p>
+                <p className="text-emerald-600 text-xs mt-0.5">
+                  {upiPreview.summary.imported} imported · {upiPreview.summary.duplicates} already saved
+                  {upiPreview.summary.needsReview > 0 ? ` · ${upiPreview.summary.needsReview} skipped` : ""}
+                </p>
+              </div>
+            </div>
+            {upiPreview.transactions.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="text-left py-2 text-xs font-medium text-slate-500">Payer UPI ID</th>
+                      <th className="text-right py-2 text-xs font-medium text-slate-500">Amount</th>
+                      <th className="text-center py-2 text-xs font-medium text-slate-500">Type</th>
+                      <th className="text-left py-2 text-xs font-medium text-slate-500">Date</th>
+                      <th className="text-left py-2 text-xs font-medium text-slate-500">UTR</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {upiPreview.transactions.map((tx, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="py-2 text-slate-900 font-medium">{tx.merchant}</td>
+                        <td className="py-2 text-right font-mono">{formatCurrency(tx.amount)}</td>
+                        <td className="py-2 text-center">
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              tx.type === "income"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {tx.type === "income" ? "Income" : "Expense"}
+                          </span>
+                        </td>
+                        <td className="py-2 text-slate-500 text-xs">{formatDate(tx.date)}</td>
+                        <td className="py-2 text-slate-400 text-xs font-mono">{tx.upiRef || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setShowUpiModal(false)} className="flex-1">
+                Done
+              </Button>
+              <Button onClick={() => setUpiPreview(null)} className="flex-1">
+                Import another period
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Pulls the UPI payments received into your Razorpay merchant account. Each payment is imported with
+              the payer&apos;s UPI ID and UTR reference, and re-running the same period never creates duplicates.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="From"
+                type="date"
+                value={upiRange.from}
+                onChange={(e) => setUpiRange({ ...upiRange, from: e.target.value })}
+                required
+              />
+              <Input
+                label="To"
+                type="date"
+                value={upiRange.to}
+                onChange={(e) => setUpiRange({ ...upiRange, to: e.target.value })}
+                required
+              />
+            </div>
+            {upiError && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700">{upiError}</p>
+              </div>
+            )}
+            <Button onClick={handleUpiImport} disabled={upiImporting} className="w-full">
+              {upiImporting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Pulling UPI transactions...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-2">
+                  <Landmark className="w-4 h-4" />
+                  Pull UPI transactions
+                </span>
+              )}
+            </Button>
+            <div className="p-3 bg-slate-50 rounded-lg">
+              <p className="text-xs font-medium text-slate-600 mb-1">Setup</p>
+              <p className="text-xs text-slate-500">
+                Needs RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in <code className="font-mono">.env</code>. Test-mode
+                keys work too. Only payments received through your account are returned — UPI has no public API for
+                reading any UPI ID&apos;s history.
+              </p>
             </div>
           </div>
         )}
