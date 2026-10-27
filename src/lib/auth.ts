@@ -1,7 +1,19 @@
 import jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
 
-const JWT_SECRET = process.env.JWT_SECRET || "spendwise-dev-secret-key-2024";
+function requireJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    // Fail fast instead of silently signing tokens with a public fallback value —
+    // a known secret would let anyone forge a session for any user.
+    throw new Error(
+      "JWT_SECRET is not set. Add it to .env (locally) or to the host's environment variables (in production)."
+    );
+  }
+  return secret;
+}
+
+const JWT_SECRET = requireJwtSecret();
 
 export interface JWTPayload {
   userId: string;

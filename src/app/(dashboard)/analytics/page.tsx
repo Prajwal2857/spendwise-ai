@@ -27,21 +27,17 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"1m" | "3m" | "6m" | "1y">("6m");
 
-  const loadTransactions = useCallback(async () => {
+  const loadTransactions = useCallback(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    try {
-      const res = await fetch("/api/transactions?limit=1000", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setTransactions(data.transactions || []);
-    } catch {
-      console.error("Failed to load transactions");
-    } finally {
-      setLoading(false);
-    }
+    fetch("/api/transactions?limit=1000", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => setTransactions(data.transactions || []))
+      .catch(() => console.error("Failed to load transactions"))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {

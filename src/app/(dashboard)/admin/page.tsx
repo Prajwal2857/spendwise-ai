@@ -26,26 +26,24 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    try {
-      const res = await fetch("/api/admin/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.stats) {
-        setStats(data.stats);
-      } else {
-        toast.error(data.error || "Access denied");
-        router.push("/dashboard");
-      }
-    } catch {
-      toast.error("Failed to load admin data");
-    } finally {
-      setLoading(false);
-    }
+    fetch("/api/admin/stats", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stats) {
+          setStats(data.stats);
+        } else {
+          toast.error(data.error || "Access denied");
+          router.push("/dashboard");
+        }
+      })
+      .catch(() => toast.error("Failed to load admin data"))
+      .finally(() => setLoading(false));
   }, [router]);
 
   useEffect(() => {

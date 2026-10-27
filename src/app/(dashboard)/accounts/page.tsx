@@ -40,21 +40,17 @@ export default function AccountsPage() {
     institution: "",
   });
 
-  const loadAccounts = useCallback(async () => {
+  const loadAccounts = useCallback(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    try {
-      const res = await fetch("/api/accounts", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setAccounts(data.accounts || []);
-    } catch {
-      toast.error("Failed to load accounts");
-    } finally {
-      setLoading(false);
-    }
+    fetch("/api/accounts", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => setAccounts(data.accounts || []))
+      .catch(() => toast.error("Failed to load accounts"))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {

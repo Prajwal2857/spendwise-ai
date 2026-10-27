@@ -1,6 +1,6 @@
 # SpendWise AI — Know Where Your Money Goes
 
-A modern, AI-powered personal finance tracker web application built with Next.js, TypeScript, MongoDB, and Tailwind CSS.
+A modern personal finance tracker web application built with Next.js, TypeScript, PostgreSQL (Neon) with Prisma, and Tailwind CSS.
 
 ## 🎯 Problem Statement
 
@@ -18,7 +18,11 @@ SpendWise AI provides **one simple dashboard** where users can understand their 
 - **Subscription Tracker** — Monitor recurring expenses with renewal reminders
 - **Analytics & Reports** — Interactive charts (bar, pie, line) with CSV export
 - **AI Insights** — Plain-English spending analysis and saving suggestions
-- **CSV Import** — Auto-detect columns, categorize transactions, detect duplicates
+- **Transaction Import** — four ways to get data in, all with duplicate detection:
+  - **Bank statements** (CSV/PDF) — auto-detects SBI, HDFC, ICICI, Axis column layouts
+  - **Screenshots/scans** (JPG/PNG) — OCR via tesseract.js
+  - **UPI SMS** — parses GPay, PhonePe, Paytm, BHIM and bank SMS formats
+  - **Razorpay UPI pull** — fetches payments received into your merchant account with payer UPI ID and UTR
 
 ### Platform Features
 - **Authentication** — Email/password registration and login with JWT
@@ -39,8 +43,10 @@ SpendWise AI provides **one simple dashboard** where users can understand their 
 | State | Zustand |
 | Notifications | React Hot Toast |
 | Backend | Next.js API Routes (REST) |
-| Database | MongoDB with Mongoose |
+| Database | PostgreSQL (Neon) with Prisma 7 + pg |
 | Auth | JWT (jsonwebtoken) + bcryptjs |
+| Import/OCR | PapaParse, unpdf, tesseract.js |
+| UPI sync | Razorpay Payments API |
 
 ## 📁 Project Structure
 
@@ -59,7 +65,10 @@ spendwise-ai/
 │   │   │   ├── insights/
 │   │   │   ├── notifications/
 │   │   │   ├── accounts/
-│   │   │   ├── csv-import/
+│   │   │   ├── file-import/ # CSV/PDF/image statement import
+│   │   │   ├── pdf-import/
+│   │   │   ├── sms-import/  # UPI SMS parsing
+│   │   │   ├── upi-import/  # Razorpay UPI pull
 │   │   │   └── admin/
 │   │   ├── layout.tsx
 │   │   └── page.tsx         # Landing page
@@ -67,7 +76,6 @@ spendwise-ai/
 │   │   ├── ui/              # Button, Card, Modal, Input, Badge, ProgressBar
 │   │   └── layout/          # Sidebar, MobileNav, Header
 │   ├── lib/                 # db.ts, auth.ts, utils.ts
-│   ├── models/              # Mongoose schemas
 │   ├── hooks/               # useApi
 │   ├── store/               # Zustand store
 │   └── types/               # TypeScript interfaces
@@ -77,9 +85,9 @@ spendwise-ai/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- MongoDB (local or Atlas)
-- npm or yarn
+- Node.js 20+
+- A PostgreSQL database (e.g. a free [Neon](https://neon.tech) project)
+- npm
 
 ### 1. Clone and Install
 
@@ -96,18 +104,23 @@ cp .env.example .env
 
 Edit `.env` with your values:
 ```env
-MONGODB_URI=mongodb://localhost:27017/spendwise
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+# Required
+DATABASE_URL=postgresql://user:password@host/spendwise?sslmode=require
+JWT_SECRET=generate-a-long-random-string-with-openssl-rand-hex-32
+
+# Optional — only needed for the "Import UPI" Razorpay pull
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxx
+RAZORPAY_KEY_SECRET=xxxxxxxx
 ```
 
-### 3. Start MongoDB
+> `JWT_SECRET` is required: the app refuses to start without it rather than fall
+> back to a default value anyone could forge tokens with.
+
+### 3. Create the database schema
 
 ```bash
-# Local MongoDB
-mongod
-
-# Or use MongoDB Atlas — just update MONGODB_URI in .env
+npm run db:push      # apply prisma/schema.prisma to DATABASE_URL
+npm run db:seed      # optional: seed demo data (seed-pg.js)
 ```
 
 ### 4. Run Development Server
@@ -172,7 +185,11 @@ Open [http://localhost:3000](http://localhost:3000).
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/insights` | Generate AI insights |
+| POST | `/api/file-import` | Import a bank statement (CSV, PDF, JPG, PNG) |
 | POST | `/api/csv-import` | Import CSV file |
+| POST | `/api/pdf-import` | Import PDF statement |
+| POST | `/api/sms-import` | Parse & import UPI SMS messages |
+| POST | `/api/upi-import` | Pull UPI payments from Razorpay by date range |
 | GET/POST/PUT | `/api/notifications` | Manage notifications |
 | GET/POST | `/api/accounts` | Manage accounts |
 | GET | `/api/admin/stats` | Admin platform stats |
@@ -180,12 +197,11 @@ Open [http://localhost:3000](http://localhost:3000).
 ## 🔒 Security
 
 - Passwords hashed with bcrypt (12 rounds)
-- JWT-based authentication with 7-day expiry
-- HTTP-only cookies for session management
+- JWT-based authentication with 7-day expiry; `JWT_SECRET` is mandatory and never falls back to a default
+- Tokens are sent as `Authorization: Bearer` headers (the client keeps them in localStorage) — serve the app over HTTPS
 - User data isolation (all queries filtered by userId)
-- Input validation on all API endpoints
 - No sensitive financial data (PINs, CVVs) ever stored
-- CSRF-safe architecture with SameSite cookies
+- Third-party API secrets stay server-side in environment variables
 
 ## 🏗 Production Deployment
 
@@ -193,8 +209,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 1. Push to GitHub
 2. Import in Vercel
-3. Set environment variables
-4. Use MongoDB Atlas for database
+3. Set environment variables (`DATABASE_URL`, `JWT_SECRET`, and optionally `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET`)
+4. Run `npm run db:push` once against the production database
 5. Deploy
 
 ```bash

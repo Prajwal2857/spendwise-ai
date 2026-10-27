@@ -25,40 +25,39 @@ export default function BudgetsPage() {
     period: "monthly" as "weekly" | "monthly" | "yearly",
   });
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    try {
-      // Load budgets
-      const budgetRes = await fetch("/api/budgets", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const budgetData = await budgetRes.json();
-      setBudgets(budgetData.budgets || []);
+    // Load budgets
+    fetch("/api/budgets", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((budgetRes) => budgetRes.json())
+      .then((budgetData) => {
+        setBudgets(budgetData.budgets || []);
 
-      // Load current month spending per category
-      const txRes = await fetch("/api/transactions?type=expense&limit=500", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const txData = await txRes.json();
+        // Load current month spending per category
+        return fetch("/api/transactions?type=expense&limit=500", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      })
+      .then((txRes) => txRes.json())
+      .then((txData) => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const currentMonthTx = (txData.transactions || []).filter(
+          (t: Transaction) => new Date(t.date) >= startOfMonth
+        );
 
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const currentMonthTx = (txData.transactions || []).filter(
-        (t: Transaction) => new Date(t.date) >= startOfMonth
-      );
-
-      const spendingMap = new Map<string, number>();
-      currentMonthTx.forEach((t: Transaction) => {
-        spendingMap.set(t.category, (spendingMap.get(t.category) || 0) + t.amount);
-      });
-      setCategorySpending(spendingMap);
-    } catch {
-      toast.error("Failed to load budgets");
-    } finally {
-      setLoading(false);
-    }
+        const spendingMap = new Map<string, number>();
+        currentMonthTx.forEach((t: Transaction) => {
+          spendingMap.set(t.category, (spendingMap.get(t.category) || 0) + t.amount);
+        });
+        setCategorySpending(spendingMap);
+      })
+      .catch(() => toast.error("Failed to load budgets"))
+      .finally(() => setLoading(false));
   }, [setBudgets]);
 
   useEffect(() => {

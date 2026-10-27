@@ -45,99 +45,97 @@ export default function DashboardPage() {
   const [monthlyTrend, setMonthlyTrend] = useState<{ month: string; income: number; expenses: number }[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
     const headers = { Authorization: `Bearer ${token}` };
 
-    try {
-      // Load transactions
-      const txRes = await fetch("/api/transactions?limit=100", { headers });
-      const txData = await txRes.json();
-      const transactions = txData.transactions || [];
+    // Load transactions
+    fetch("/api/transactions?limit=100", { headers })
+      .then((txRes) => txRes.json())
+      .then((txData) => {
+        const transactions = txData.transactions || [];
 
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-      const currentMonth = transactions.filter(
-        (t: Transaction) => new Date(t.date) >= startOfMonth
-      );
-      const lastMonth = transactions.filter(
-        (t: Transaction) =>
-          new Date(t.date) >= startOfLastMonth && new Date(t.date) <= endOfLastMonth
-      );
-
-      const monthlyIncome = currentMonth
-        .filter((t: Transaction) => t.type === "income")
-        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
-      const monthlyExpenses = currentMonth
-        .filter((t: Transaction) => t.type === "expense")
-        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
-      const previousMonthExpenses = lastMonth
-        .filter((t: Transaction) => t.type === "expense")
-        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
-
-      setStats({
-        totalBalance: monthlyIncome - monthlyExpenses + 50000,
-        monthlyIncome,
-        monthlyExpenses,
-        savings: monthlyIncome - monthlyExpenses,
-        previousMonthExpenses,
-      });
-
-      // Category breakdown
-      const catMap = new Map<string, number>();
-      currentMonth
-        .filter((t: Transaction) => t.type === "expense")
-        .forEach((t: Transaction) => {
-          catMap.set(t.category, (catMap.get(t.category) || 0) + t.amount);
-        });
-
-      const colors = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
-      const catData = [...catMap.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([name, amount], i) => ({
-          name,
-          amount,
-          emoji: getCategoryEmoji(name),
-          color: colors[i % colors.length],
-        }));
-
-      setCategoryData(catData);
-
-      // Monthly trend (last 6 months)
-      const trend = [];
-      for (let i = 5; i >= 0; i--) {
-        const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-        const mTx = transactions.filter(
-          (t: Transaction) =>
-            new Date(t.date) >= m && new Date(t.date) <= mEnd
+        const currentMonth = transactions.filter(
+          (t: Transaction) => new Date(t.date) >= startOfMonth
         );
-        trend.push({
-          month: m.toLocaleString("en-IN", { month: "short" }),
-          income: mTx.filter((t: Transaction) => t.type === "income").reduce((s: number, t: Transaction) => s + t.amount, 0),
-          expenses: mTx.filter((t: Transaction) => t.type === "expense").reduce((s: number, t: Transaction) => s + t.amount, 0),
+        const lastMonth = transactions.filter(
+          (t: Transaction) =>
+            new Date(t.date) >= startOfLastMonth && new Date(t.date) <= endOfLastMonth
+        );
+
+        const monthlyIncome = currentMonth
+          .filter((t: Transaction) => t.type === "income")
+          .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+        const monthlyExpenses = currentMonth
+          .filter((t: Transaction) => t.type === "expense")
+          .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+        const previousMonthExpenses = lastMonth
+          .filter((t: Transaction) => t.type === "expense")
+          .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+
+        setStats({
+          totalBalance: monthlyIncome - monthlyExpenses + 50000,
+          monthlyIncome,
+          monthlyExpenses,
+          savings: monthlyIncome - monthlyExpenses,
+          previousMonthExpenses,
         });
-      }
-      setMonthlyTrend(trend);
 
-      // Recent transactions
-      setRecentTransactions(transactions.slice(0, 5));
+        // Category breakdown
+        const catMap = new Map<string, number>();
+        currentMonth
+          .filter((t: Transaction) => t.type === "expense")
+          .forEach((t: Transaction) => {
+            catMap.set(t.category, (catMap.get(t.category) || 0) + t.amount);
+          });
 
-      // Load insights
-      const insRes = await fetch("/api/insights", { headers });
-      const insData = await insRes.json();
-      setInsights(insData.insights || []);
-    } catch (error) {
-      console.error("Failed to load dashboard data:", error);
-    } finally {
-      setLoading(false);
-    }
+        const colors = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+        const catData = [...catMap.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, amount], i) => ({
+            name,
+            amount,
+            emoji: getCategoryEmoji(name),
+            color: colors[i % colors.length],
+          }));
+
+        setCategoryData(catData);
+
+        // Monthly trend (last 6 months)
+        const trend = [];
+        for (let i = 5; i >= 0; i--) {
+          const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+          const mTx = transactions.filter(
+            (t: Transaction) =>
+              new Date(t.date) >= m && new Date(t.date) <= mEnd
+          );
+          trend.push({
+            month: m.toLocaleString("en-IN", { month: "short" }),
+            income: mTx.filter((t: Transaction) => t.type === "income").reduce((s: number, t: Transaction) => s + t.amount, 0),
+            expenses: mTx.filter((t: Transaction) => t.type === "expense").reduce((s: number, t: Transaction) => s + t.amount, 0),
+          });
+        }
+        setMonthlyTrend(trend);
+
+        // Recent transactions
+        setRecentTransactions(transactions.slice(0, 5));
+
+        // Load insights
+        return fetch("/api/insights", { headers });
+      })
+      .then((insRes) => insRes.json())
+      .then((insData) => setInsights(insData.insights || []))
+      .catch((error) => console.error("Failed to load dashboard data:", error))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
