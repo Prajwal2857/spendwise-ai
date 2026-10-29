@@ -38,6 +38,24 @@ interface RazorpayPayment {
   created_at: number;
 }
 
+function razorpayKeys(): { keyId: string; keySecret: string } | null {
+  const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+  const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+  if (!keyId || !keySecret) return null;
+  return { keyId, keySecret };
+}
+
+/**
+ * Tells the UI whether a Razorpay account is connected, so the import modal can
+ * show a working alternative instead of a button that always fails with 400.
+ */
+export async function GET(req: NextRequest) {
+  const userId = getUserFromRequest(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  return NextResponse.json({ configured: razorpayKeys() !== null, provider: "razorpay" });
+}
+
 function parseIsoDate(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const parsed = new Date(`${value.trim()}T00:00:00`);
@@ -92,9 +110,8 @@ export async function POST(req: NextRequest) {
     const userId = getUserFromRequest(req);
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const keyId = process.env.RAZORPAY_KEY_ID?.trim();
-    const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
-    if (!keyId || !keySecret) {
+    const keys = razorpayKeys();
+    if (!keys) {
       return NextResponse.json(
         {
           error:
@@ -125,7 +142,7 @@ export async function POST(req: NextRequest) {
 
     let payments: RazorpayPayment[];
     try {
-      payments = await fetchUpiPayments(keyId, keySecret, fromUnix, toUnix);
+      payments = await fetchUpiPayments(keys.keyId, keys.keySecret, fromUnix, toUnix);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not reach Razorpay.";
       return NextResponse.json({ error: message }, { status: 502 });

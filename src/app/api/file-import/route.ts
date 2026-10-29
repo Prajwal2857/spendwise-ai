@@ -102,6 +102,23 @@ function parseTransactionsFromCSV(text: string) {
     const cols = parseCSVLine(lines[i]);
     if (cols.length < 2) continue;
 
+    // An unquoted thousands separator splits one field in two: "...,₹1,299.00"
+    // parses as "₹1" + "299.00", which used to import as ₹1. Fold the extra
+    // cells back into the amount column so the row keeps the header's shape.
+    if (amtIdx >= 0 && cols.length > headerCols.length) {
+      const extra = cols.length - headerCols.length;
+      const merged = cols.slice(amtIdx, amtIdx + extra + 1).join(",").trim();
+      const rest = cols.slice(amtIdx + extra + 1);
+      const next = cols[amtIdx + 1]?.trim() ?? "";
+      // Only merge when it really is a number split by a comma, never when the
+      // extra cells are unrelated data.
+      if (/\d$/.test(cols[amtIdx].trim()) && /^\d{3}(?:,\d{3})*(?:\.\d{1,2})?$/.test(next)) {
+        const head = cols.slice(0, amtIdx);
+        cols.length = 0;
+        cols.push(...head, merged, ...rest);
+      }
+    }
+
     let dateStr = "";
     let merchant = "";
     let amount = 0;

@@ -66,6 +66,7 @@ export default function TransactionsPage() {
   // UPI (Razorpay) import state
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [upiImporting, setUpiImporting] = useState(false);
+  const [upiConfigured, setUpiConfigured] = useState<boolean | null>(null);
   const [upiError, setUpiError] = useState<string | null>(null);
   const [upiRange, setUpiRange] = useState({ from: "", to: "" });
   const [upiPreview, setUpiPreview] = useState<{
@@ -281,7 +282,27 @@ export default function TransactionsPage() {
     setUpiRange({ from: iso(from), to: iso(to) });
     setUpiPreview(null);
     setUpiError(null);
+    setUpiConfigured(null);
     setShowUpiModal(true);
+
+    // Razorpay is optional. Without it the modal offers the statement paths
+    // instead of a button that can only ever fail.
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setUpiConfigured(false);
+      return;
+    }
+
+    fetch("/api/upi-import", { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => (res.ok ? res.json() : { configured: false }))
+      .then((data) => setUpiConfigured(Boolean(data.configured)))
+      .catch(() => setUpiConfigured(false));
+  };
+
+  const switchToImport = (target: "file" | "sms") => {
+    setShowUpiModal(false);
+    if (target === "file") setShowImportModal(true);
+    else setShowSmsModal(true);
   };
 
   const handleUpiImport = async () => {
@@ -715,7 +736,7 @@ export default function TransactionsPage() {
       <Modal
         isOpen={showUpiModal}
         onClose={() => setShowUpiModal(false)}
-        title="Import from UPI (Razorpay)"
+        title="Import from UPI"
       >
         {upiPreview ? (
           <div className="space-y-4">
@@ -775,6 +796,46 @@ export default function TransactionsPage() {
                 Import another period
               </Button>
             </div>
+          </div>
+        ) : upiConfigured !== true ? (
+          <div className="space-y-4">
+            {upiConfigured === null ? (
+              <div className="flex flex-col items-center py-6">
+                <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3" />
+                <p className="text-sm text-slate-500">Checking your UPI connection...</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-amber-800">
+                    No Razorpay account is connected, so pulling payments automatically isn&apos;t available.
+                  </p>
+                </div>
+                <p className="text-sm text-slate-600">
+                  UPI has no public API for reading a personal UPI ID&apos;s history, so a UPI ID alone can&apos;t be
+                  imported. What works is the statement your UPI app or bank exports — open your app, download the
+                  statement for the period you want, and import it here. Every transaction comes in with its date,
+                  amount and payee, and re-importing the same statement never creates duplicates.
+                </p>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => switchToImport("sms")} className="flex-1">
+                    Paste UPI messages
+                  </Button>
+                  <Button onClick={() => switchToImport("file")} className="flex-1">
+                    Upload statement
+                  </Button>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <p className="text-xs font-medium text-slate-600 mb-1">Have a Razorpay merchant account?</p>
+                  <p className="text-xs text-slate-500">
+                    Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to <code className="font-mono">.env</code> and restart
+                    the dev server — this modal then pulls your received UPI payments directly, with the payer VPA and
+                    UTR reference.
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
