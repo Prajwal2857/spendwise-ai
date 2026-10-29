@@ -18,6 +18,8 @@ model User {
   monthlyIncome           Float    @default(0) @map("monthly_income")
   selectedCategories      String[] @map("selected_categories")
   notificationPreferences Json?    @map("notification_preferences")
+  // Long-lived token a phone-side SMS forwarder uses to push bank messages in.
+  ingestToken             String?  @unique @map("ingest_token")
   createdAt               DateTime @default(now()) @map("created_at")
 
   accounts          Account[]

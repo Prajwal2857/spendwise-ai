@@ -138,6 +138,26 @@ Open [http://localhost:3000](http://localhost:3000).
 3. Complete the onboarding flow
 4. Start adding transactions!
 
+### 6. Automatic UPI capture (optional)
+
+UPI has no API that lets an app read a **personal** UPI ID's transaction
+history — the RBI Account Aggregator route is only open to registered
+financial-information users, not individuals. What every UPI payment *does*
+produce is an SMS from your bank, so the app accepts those automatically:
+
+1. Open **Settings → Automatic UPI capture** and click **Generate capture token**.
+2. Install any SMS-forwarder app on your phone (Tasker, MacroDroid, or a free
+   "SMS to webhook" app) and create a rule for SMS from your bank.
+3. Point it at `https://your-domain.com/api/ingest/sms` and send the message
+   either as JSON (`{"message": "<sms text>"}`) or as `?message=<sms text>`
+   for GET-only forwarders.
+4. Add the header `x-ingest-token: <token from Settings>`.
+
+Each forwarded message is parsed into a transaction (`paymentMethod: UPI`) and
+deduplicated by UPI reference and by merchant/date/amount, so retries and
+duplicate forwards never create doubles. Use **Send test message** in Settings
+to verify parsing without saving anything — it runs in dry-run mode.
+
 ## 📡 API Endpoints
 
 ### Authentication
@@ -190,6 +210,9 @@ Open [http://localhost:3000](http://localhost:3000).
 | POST | `/api/pdf-import` | Import PDF statement |
 | POST | `/api/sms-import` | Parse & import UPI SMS messages |
 | POST | `/api/upi-import` | Pull UPI payments from Razorpay by date range |
+| GET | `/api/upi-import` | Report whether a Razorpay account is connected |
+| GET/POST/DELETE | `/api/ingest/token` | Read, rotate or remove your SMS capture token |
+| GET/POST | `/api/ingest/sms` | Automatic capture of forwarded bank SMS (token auth) |
 | GET/POST/PUT | `/api/notifications` | Manage notifications |
 | GET/POST | `/api/accounts` | Manage accounts |
 | GET | `/api/admin/stats` | Admin platform stats |
@@ -200,6 +223,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - JWT-based authentication with 7-day expiry; `JWT_SECRET` is mandatory and never falls back to a default
 - Tokens are sent as `Authorization: Bearer` headers (the client keeps them in localStorage) — serve the app over HTTPS
 - User data isolation (all queries filtered by userId)
+- The SMS capture token is a separate revocable credential from the session JWT, scoped to one user; rotate or disable it in Settings at any time
 - No sensitive financial data (PINs, CVVs) ever stored
 - Third-party API secrets stay server-side in environment variables
 
